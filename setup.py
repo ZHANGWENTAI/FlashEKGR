@@ -21,24 +21,24 @@ from torch.utils.cpp_extension import CppExtension, BuildExtension, CUDAExtensio
 
 import os
 import subprocess
+import sys
 BASEPATH = os.path.dirname(os.path.abspath(__file__))
 
 extlib_path = 'smore/common/torchext'
-compile_args = ['-I%s/third_party/ThreadPool' % BASEPATH, '-Wno-deprecated-declarations']
+compile_args = [f'-I{os.path.join(BASEPATH, "third_party/ThreadPool")}', '-Wno-deprecated-declarations']
 link_args = []
 
-ext_modules=[CppExtension('extlib', 
-                          ['%s/extlib.cpp' % extlib_path],
-                          extra_compile_args=compile_args,
-                          extra_link_args=link_args)]
+ext_modules = [CppExtension('extlib', 
+                            [os.path.join(extlib_path, 'extlib.cpp')],
+                            extra_compile_args=compile_args,
+                            extra_link_args=link_args)]
 
 # build cuda lib
 import torch
 if torch.cuda.is_available():
     ext_modules.append(CUDAExtension('extlib_cuda',
-                                    ['%s/%s' % (extlib_path, x) for x in [
-                                        'extlib_cuda.cpp', 'ext_cuda_kernel.cu'
-                                    ]],
+                                    [os.path.join(extlib_path, 'extlib_cuda.cpp'),
+                                     os.path.join(extlib_path, 'ext_cuda_kernel.cu')],
                                     extra_compile_args=compile_args))
 
 class custom_develop(develop):
@@ -66,5 +66,14 @@ setup(name='smore',
       cmdclass={
           'build_ext': BuildExtension,
           'develop': custom_develop,
-        }
+        },
+    options={
+        'build_ext': {
+            'build_lib': os.path.join(
+                os.environ.get('CONDA_PREFIX', sys.prefix), 
+                'lib', 
+                f'python{sys.version_info.major}.{sys.version_info.minor}'
+            )
+        },
+    }
 )

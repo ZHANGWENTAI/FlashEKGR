@@ -138,7 +138,7 @@ def test_kg(rank, kg_mem):
 
 
 if __name__ == '__main__':
-    kg_mem = KGMem()
+    kg_mem = KGMem('uint32')
     db_name = 'FB15k'
     data_folder = os.path.join(os.path.expanduser('~'), 'data/knowledge_graphs/%s' % db_name)
     kg_mem.load(data_folder + '/train_bidir.bin')

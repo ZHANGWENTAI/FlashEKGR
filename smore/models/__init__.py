@@ -23,117 +23,56 @@ from smore.common.util import eval_tuple
 
 
 def build_model(args, nentity, nrelation, query_name_dict):
-    has_neg = False
     tasks = args.tasks.split('.')
-    for task in tasks:
-        if 'n' in task:
-            has_neg = True
-            break
+    has_neg = any('n' in task for task in tasks)
 
+    # Validate union evaluation mode
     if args.evaluate_union == 'DM':
-        assert args.geo == 'beta'
-    if args.geo == 'box':
-        assert not has_neg, "Q2B cnanot handle queries with negation"
-        model = BoxReasoning(nentity=nentity,
-                             nrelation=nrelation,
-                             hidden_dim=args.hidden_dim,
-                             gamma=args.gamma,
-                             use_cuda = args.cuda,
-                             box_mode=eval_tuple(args.box_mode),
-                             batch_size = args.batch_size,
-                             test_batch_size=args.test_batch_size,
-                             sparse_embeddings=args.sparse_embeddings,
-                             sparse_device=args.sparse_device,
-                             query_name_dict = query_name_dict,
-                             optim_mode = args.optim_mode,
-                             logit_impl=args.logit_impl)
-    elif args.geo == 'rotate':
-        assert not has_neg, "Rotate cnanot handle queries with negation"
-        model = RotateReasoning(nentity=nentity,
-                             nrelation=nrelation,
-                             hidden_dim=args.hidden_dim,
-                             gamma=args.gamma,
-                             use_cuda = args.cuda,
-                             rotate_mode=eval_tuple(args.rotate_mode),
-                             batch_size = args.batch_size,
-                             test_batch_size=args.test_batch_size,
-                             sparse_embeddings=args.sparse_embeddings,
-                             sparse_device=args.sparse_device,
-                             query_name_dict = query_name_dict,
-                             optim_mode = args.optim_mode,
-                             logit_impl=args.logit_impl)
-    elif args.geo == 'complex':
-        assert not has_neg, "Rotate cnanot handle queries with negation"
-        model = ComplexReasoning(nentity=nentity,
-                             nrelation=nrelation,
-                             hidden_dim=args.hidden_dim,
-                             gamma=args.gamma,
-                             use_cuda = args.cuda,
-                             complex_mode=eval_tuple(args.complex_mode),
-                             batch_size = args.batch_size,
-                             test_batch_size=args.test_batch_size,
-                             sparse_embeddings=args.sparse_embeddings,
-                             sparse_device=args.sparse_device,
-                             query_name_dict = query_name_dict,
-                             optim_mode = args.optim_mode,
-                             logit_impl=args.logit_impl)
-    elif args.geo == 'distmult':
-        assert not has_neg, "Rotate cnanot handle queries with negation"
-        model = DistmultReasoning(nentity=nentity,
-                             nrelation=nrelation,
-                             hidden_dim=args.hidden_dim,
-                             gamma=args.gamma,
-                             use_cuda = args.cuda,
-                             distmult_mode=eval_tuple(args.distmult_mode),
-                             batch_size = args.batch_size,
-                             test_batch_size=args.test_batch_size,
-                             sparse_embeddings=args.sparse_embeddings,
-                             sparse_device=args.sparse_device,
-                             query_name_dict = query_name_dict,
-                             optim_mode = args.optim_mode,
-                             logit_impl=args.logit_impl)
-    elif args.geo == 'beta':
-        model = BetaReasoning(nentity=nentity,
-                             nrelation=nrelation,
-                             hidden_dim=args.hidden_dim,
-                             gamma=args.gamma,
-                             use_cuda = args.cuda,
-                             beta_mode=eval_tuple(args.beta_mode),
-                             batch_size = args.batch_size,
-                             test_batch_size=args.test_batch_size,
-                             sparse_embeddings=args.sparse_embeddings,
-                             sparse_device=args.sparse_device,
-                             query_name_dict = query_name_dict,
-                             optim_mode = args.optim_mode,
-                             logit_impl=args.logit_impl)
-    elif args.geo == 'vec':
-        assert not has_neg, "GQE cnanot handle queries with negation"
-        model = VecReasoning(nentity=nentity,
-                             nrelation=nrelation,
-                             hidden_dim=args.hidden_dim,
-                             gamma=args.gamma,
-                             use_cuda = args.cuda,
-                             model_config=eval_tuple(args.vec_mode),
-                             batch_size = args.batch_size,
-                             test_batch_size=args.test_batch_size,
-                             sparse_embeddings=args.sparse_embeddings,
-                             sparse_device=args.sparse_device,
-                             query_name_dict = query_name_dict,
-                             optim_mode = args.optim_mode,
-                             logit_impl=args.logit_impl)
+        assert args.geo == 'beta', "De Morgan's laws evaluation only supported for BetaE"
+
+    # Common parameters for all models
+    common_params = {
+        'nentity': nentity,
+        'nrelation': nrelation,
+        'hidden_dim': args.hidden_dim,
+        'gamma': args.gamma,
+        'use_cuda': args.cuda,
+        'batch_size': args.batch_size,
+        'test_batch_size': args.test_batch_size,
+        'sparse_embeddings': args.sparse_embeddings,
+        'sparse_device': args.sparse_device,
+        'query_name_dict': query_name_dict,
+        'optim_mode': args.optim_mode,
+        'logit_impl': args.logit_impl,
+    }
+
+    # Model class and mode configuration mapping
+    model_config_map = {
+        'box': (BoxReasoning, 'box_mode', args.box_mode, "Q2B cannot handle queries with negation"),
+        'rotate': (RotateReasoning, 'rotate_mode', args.rotate_mode, "Rotate cannot handle queries with negation"),
+        'complex': (ComplexReasoning, 'complex_mode', args.complex_mode, "Complex cannot handle queries with negation"),
+        'distmult': (DistmultReasoning, 'distmult_mode', args.distmult_mode, "DistMult cannot handle queries with negation"),
+        'beta': (BetaReasoning, 'beta_mode', args.beta_mode, None),  # Beta supports negation
+        'vec': (VecReasoning, 'model_config', args.vec_mode, "GQE cannot handle queries with negation"),
+    }
+
+    # Get model configuration
+    if args.geo in model_config_map:
+        model_class, mode_key, mode_value, neg_error_msg = model_config_map[args.geo]
+        
+        # Check negation support
+        if neg_error_msg and has_neg:
+            raise AssertionError(neg_error_msg)
+        
+        # Build model-specific parameters
+        model_params = common_params.copy()
+        model_params[mode_key] = eval_tuple(mode_value)
+        model = model_class(**model_params)
     else:
+        # Fallback to model_list for custom models
         mod_class = getattr(model_list, args.geo)
-        model = mod_class(nentity=nentity,
-                          nrelation=nrelation,
-                          hidden_dim=args.hidden_dim,
-                          gamma=args.gamma,
-                          use_cuda = args.cuda,
-                          batch_size = args.batch_size,
-                          test_batch_size=args.test_batch_size,
-                          sparse_embeddings=args.sparse_embeddings,
-                          sparse_device=args.sparse_device,
-                          query_name_dict = query_name_dict,
-                          optim_mode = args.optim_mode,
-                          model_config=eval_tuple(args.model_config),
-                          logit_impl=args.logit_impl)
+        model_params = common_params.copy()
+        model_params['model_config'] = eval_tuple(args.model_config)
+        model = mod_class(**model_params)
+    
     return model

@@ -62,16 +62,21 @@ class EmbeddingReadOnly(object):
         return (buf, out)
 
     def read(self, indices, name=None):
+        # print(indices.shape)
         if indices is None:
             t = self.embed.to(self.device)
             t.job_handle = self.dummy_job
             return t
+        # print("not self.embed.is_cuda" + str(not self.embed.is_cuda))
         if not self.embed.is_cuda:
+            # print("name is not None " + str(name is not None))
+            # print("indices.numel() != self.embed.shape[0] " + str(indices.numel() != self.embed.shape[0]))
             if name is not None and indices.numel() != self.embed.shape[0]:  # TODO: make it more explicit
                 return self.async_read(indices, name)
             for key in self.last_write_jobs:
                 self.last_write_jobs[key].sync()
         indices = indices.view(-1)
+        # print("EmbeddingReadOnly self.device: " + self.device)
         submat = self.embed[indices].to(self.device)
         submat.job_handle = self.dummy_job
         return submat
@@ -80,6 +85,7 @@ class EmbeddingReadOnly(object):
         assert not indices.is_cuda
         indices = indices.view(-1)
         buf, out = self.get_or_create_buf(name, indices.shape[0], self.read_buf)
+        # print(buf.shape)
         self.read_src_cache[name] = indices
         with torch.cuda.stream(self.stream):
             job_handle = extlib.async_read(self.read_thread_pool,

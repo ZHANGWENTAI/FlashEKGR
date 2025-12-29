@@ -69,6 +69,7 @@ class KGReasoning(nn.Module):
         self.t_fwd = 0
         self.t_loss = 0
         self.t_opt = 0
+        self.t_total = 0
 
         self.t_fwd_prepare_data = 0
         self.t_fwd_model_call_emb = 0
@@ -189,18 +190,26 @@ class KGReasoning(nn.Module):
         num_branches = len(embedding_list)
         num_lazy_union = [embedding[0].shape[1] for embedding in embedding_list] # [1, 2, 3]
         stacked_embedding_list = []
+        # print("num_lazy_union", num_lazy_union)
+        # print("len(embedding_list)", len(embedding_list))
         for branch, embedding in enumerate(embedding_list):
+            # print("embedding.shape", embedding.shape)
             embedding = torch.cat(embedding, dim=-1) # concat the real and imaginary embedding
             for i in range(num_branches):
                 if i == branch:
                     continue
                 embedding = embedding.unsqueeze(i + 1)
+            # print("embedding.shape", embedding.shape)
             shape_to_tile = [1] + num_lazy_union + [1]
+            # print("shape_to_tile", shape_to_tile)
             shape_to_tile[branch + 1] = 1
+            # print("shape_to_tile", shape_to_tile)
             embedding = embedding.repeat(shape_to_tile) # [32, 1, 2, 3, 16]
+            # print("embedding.shape", embedding.shape)
             embedding = embedding.view([embedding.shape[0], -1, embedding.shape[-1]])
             stacked_embedding_list.append(embedding)
         stacked_embedding_list = torch.stack(stacked_embedding_list) # [3, 32, 6, 16]
+        # print("stacked_embedding_list.shape", stacked_embedding_list.shape)
         return self.intersection_between_stacked_embedding(stacked_embedding_list)
 
     def negation(self, embedding):
@@ -342,6 +351,7 @@ class KGReasoning(nn.Module):
             all_positive_embedding = self.entity_regularizer(all_positive_embedding)
             positive_embedding = None if all_positive_embedding is None else all_positive_embedding.unsqueeze(1)
             positive_ent_feat = None if all_pos_ent_feat is None else all_pos_ent_feat.unsqueeze(1)
+            # print("positive_embedding: ",positive_embedding.shape)
             positive_logits = self.cal_logit(positive_embedding, positive_ent_feat, query_embedding)
         else:
             positive_logits = None

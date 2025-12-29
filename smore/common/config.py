@@ -12,10 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import argparse
 
 query_name_dict = {('e',('r',)): '1p', 
@@ -129,4 +125,3 @@ def parse_args(args=None):
     parser.add_argument('--eval_link_pred', action='store_true', default=False)
     parser.add_argument('--feature_folder', default=None, type=str, help="folder to entity and relation features")
     return parser
-    # return parser.parse_args(args)

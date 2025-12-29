@@ -54,6 +54,7 @@ class SparseEmbedding(nn.Module):
             tensor_obj.share_memory_()
 
     def forward(self, indices, name=None):
+        # print("SparseEmbedding of " + str(name) + " forward")
         if self.num_rows == 0:
             return None
         if self.fwd_delegate is not None:

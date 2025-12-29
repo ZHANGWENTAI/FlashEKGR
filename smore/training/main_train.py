@@ -12,10 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import argparse
 import json
 import logging
@@ -73,53 +69,65 @@ def setup_train_mode(args):
 
 
 def setup_save_path(args):
+    """Setup the save path for logs and checkpoints based on model configuration."""
     cur_time = parse_time()
-    if args.prefix is None:
-        prefix = 'logs'
-    else:
-        prefix = args.prefix
+    prefix = args.prefix or 'logs'
     print("overwritting args.save_path")
-    args.save_path = os.path.join(prefix, args.data_path.split('/')[-1], "{}-{}".format(args.training_tasks, args.tasks), args.geo)
-    if args.geo in ['box']:
-        tmp_str = "g-{}-mode-{}".format(args.gamma, args.box_mode)
-    elif args.geo in ['vec']:
-        tmp_str = "g-{}".format(args.gamma)
-    elif args.geo == 'beta':
-        tmp_str = "g-{}-mode-{}".format(args.gamma, args.beta_mode)
-    elif args.geo == 'rotate':
-        tmp_str = "g-{}-mode-{}".format(args.gamma, args.rotate_mode)
-    elif args.geo == 'distmult':
-        tmp_str = "g-{}-mode-{}".format(args.gamma, args.distmult_mode)
-    elif args.geo == 'complex':
-        tmp_str = "g-{}-mode-{}".format(args.gamma, args.complex_mode)
+    
+    # Base path construction
+    data_name = args.data_path.split('/')[-1]
+    args.save_path = os.path.join(
+        prefix, 
+        data_name, 
+        f"{args.training_tasks}-{args.tasks}", 
+        args.geo
+    )
+    
+    # Model-specific mode configuration mapping
+    mode_config_map = {
+        'box': args.box_mode,
+        'beta': args.beta_mode,
+        'rotate': args.rotate_mode,
+        'distmult': args.distmult_mode,
+        'complex': args.complex_mode,
+    }
+    
+    # Build configuration string
+    mode_str = mode_config_map.get(args.geo, args.model_config)
+    if mode_str:
+        tmp_str = f"g-{args.gamma}-mode-{mode_str}"
     else:
-        tmp_str = "g-{}-mode-{}".format(args.gamma, args.model_config)
+        tmp_str = f"g-{args.gamma}"
+    
+    # Add optional configurations
     if args.negative_adversarial_sampling:
-        tmp_str += '-adv-{}'.format(args.adversarial_temperature)
+        tmp_str += f'-adv-{args.adversarial_temperature}'
     if args.reg_coeff != 0:
-        tmp_str += '-reg-{}'.format(args.reg_coeff)
-    tmp_str += '-ngpu-{}'.format(args.gpus)
+        tmp_str += f'-reg-{args.reg_coeff}'
+    tmp_str += f'-ngpu-{args.gpus}'
 
+    # Add online sampling configurations
     if args.online_sample:
-        tmp_str += '-os-{}'.format(args.online_sample_mode)
+        tmp_str += f'-os-{args.online_sample_mode}'
         if eval_tuple(args.online_sample_mode)[3] == 'wstruct':
-            tmp_str += '-({})'.format(",".join(["%.2f"%i for i in args.normalized_structure_prob]))
-
-        tmp_str += '-dataset-{}'.format(args.train_online_mode)
-        tmp_str += '-opt-{}'.format(args.optim_mode)
+            prob_str = ",".join([f"{i:.2f}" for i in args.normalized_structure_prob])
+            tmp_str += f'-({prob_str})'
+        tmp_str += f'-dataset-{args.train_online_mode}'
+        tmp_str += f'-opt-{args.optim_mode}'
         if args.share_negative:
-            tmp_str += '-sharen' 
-        tmp_str += '-%s' % args.sampler_type
-    tmp_str += '-lr_%s' % args.lr_schedule
+            tmp_str += '-sharen'
+        tmp_str += f'-{args.sampler_type}'
+    
+    tmp_str += f'-lr_{args.lr_schedule}'
+    
+    # Finalize save path
     if args.checkpoint_path is not None:
         args.save_path = args.checkpoint_path
     else:
         args.save_path = os.path.join(args.save_path, tmp_str, cur_time)
 
-    if not os.path.exists(args.save_path):
-        os.makedirs(args.save_path)
-
-    print ("logging to", args.save_path)
+    os.makedirs(args.save_path, exist_ok=True)
+    print("logging to", args.save_path)
 
 
 def set_logger(args):

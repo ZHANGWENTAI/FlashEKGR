@@ -12,41 +12,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import logging
-import numpy as np
-import torch
-import torch.nn as nn
-import json
-import torch.nn.functional as F
-import torch.distributed as dist
-
-from torch.utils.data import DataLoader
-import random
-import math
 import collections
-import itertools
+import json
+import math
+import os
 import time
 from tqdm import tqdm
-import os
-import pdb
-from torch.multiprocessing import Queue, Pipe
-import torch.multiprocessing as mp
-from _thread import start_new_thread
-import traceback
-from functools import wraps
-from tensorboardX import SummaryWriter, GlobalSummaryWriter
-from torch_scatter import scatter
+
+import torch
+import torch.nn.functional as F
+import torch.distributed as dist
+from torch.utils.data import DataLoader
 
 from smore.cpp_sampler.online_sampler import OnlineSampler
-from smore.common.util import name_query_dict, query_name_dict, thread_wrapped_func, log_metrics, tuple2filterlist, eval_tuple, flatten_query
+from smore.common.util import (
+    name_query_dict, query_name_dict, thread_wrapped_func, 
+    log_metrics, eval_tuple
+)
 from smore.common.embedding.embed_optimizer import get_optim_class
 from smore.evaluation.dataloader import TestDataset
+from torchviz import make_dot
 
 eps = 1e-8
+def save_loss(loss,step,filename='/home/zhangwentai/smore/betae_loss.txt'):
+    if step % 100 == 0 :
+        with open(filename,'a') as f:
+            f.write(f"step{step},loss:{loss.item()}\n")
 
 def test_step_1p(model, args, train_sampler, test_dataloader, result_buffer, train_step, device, phase):
     model.eval()
@@ -192,6 +184,7 @@ def train_step_mp(model, dense_optimizers, embedding_optimizers, train_iterator,
                                                      device=device,
                                                      reg_coeff=args.reg_coeff)
     t3 = time.time()
+    
     if is_negative_mat is not None:
         negative_logit = negative_logit * is_negative_mat
     if args.negative_adversarial_sampling:
@@ -211,17 +204,14 @@ def train_step_mp(model, dense_optimizers, embedding_optimizers, train_iterator,
         negative_sample_loss = -torch.mean(negative_score)
 
     loss = (positive_sample_loss + negative_sample_loss + reg_loss*args.reg_coeff) / 2 / world_size
-    if args.reg_coeff != 0.:
-        pass
     loss.backward()
-    # print ("after loss backward")
+    
     t4 = time.time()
     for embedding_name in embedding_optimizers:
         embedding_optimizers[embedding_name].apply_grad(lr)
     for _, param in model.named_dense_parameters():
         if param.grad is None:  # should be None for everyone
             continue
-            # param.grad = param.data.new(param.data.shape).zero_()
         dist.all_reduce(param.grad.data, op=dist.ReduceOp.SUM)
     for optimizer in dense_optimizers:
         optimizer.step()
@@ -231,18 +221,21 @@ def train_step_mp(model, dense_optimizers, embedding_optimizers, train_iterator,
     model.t_fwd += t3 - t2
     model.t_loss += t4 - t3
     model.t_opt += t5 - t4
+    model.t_total += t5 - t1
     log = {
         'positive_sample_loss': positive_sample_loss.item(),
         'negative_sample_loss': negative_sample_loss.item(),
         'loss': loss.item(),
     }
     
-    log['msg'] = "step: {}, t_read: {:.5f}, t_fwd: {:.5f}, t_loss: {:.5f}, t_opt: {:.5f}".format(
+    log['msg'] = "step: {}, t_read: {:.5f}, t_fwd: {:.5f}, t_loss: {:.5f}, t_opt: {:.5f}, t_total: {:.5f}".format(
                 step,
                 model.t_read/(step+1),
                 model.t_fwd/(step+1),
                 model.t_loss/(step+1),
-                model.t_opt/(step+1))
+                model.t_opt/(step+1),
+                model.t_total/(step+1)
+                )
 
     if args.reg_coeff != 0 and reg_loss > 0:
         log['reg_loss'] = reg_loss.item()

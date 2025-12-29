@@ -35,10 +35,11 @@ from smore.common.embedding.embed_rw import EmbeddingRW
 from smore.common.util import eval_tuple
 from smore.common.consts import eps
 
-
 def merge_grad_indices(idx_list):
     concatenated_indices = torch.cat(idx_list, dim=0)
+    # print("original batch size", concatenated_indices.shape)
     merged_indices, inverse_indices = torch.unique(concatenated_indices, return_inverse=True)
+    # print("merged batch size", merged_indices.shape, merged_indices.numel() / concatenated_indices.numel())
     return merged_indices, inverse_indices
 
 
@@ -62,6 +63,14 @@ class EmbedLookupFunc(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
+        # print("backward---------------", ctx.name)
+        # norm1 = torch.norm(grad_output, p=1)
+        # 求向量的L2范数
+        # norm2 = torch.norm(grad_output, p=2)
+        # print("The L1 norm is %f. " %(norm1.item() / grad_output.numel()))
+        # print("The L2 norm is %f. " %(norm2.item() / grad_output.numel()))
+        # print("grad_output.shape", grad_output.shape)
+        # print(grad_output)
         ctx.embed_opt.accumulate_grad(ctx.indices, grad_output, ctx.idx_fwd)
         return None, None, None, None
 
@@ -106,6 +115,7 @@ class EmbeddingOptimizer(ABC):
         optim_mode = eval_tuple(args.optim_mode)
         for e in list_sparse_embeds:
             assert isinstance(e, SparseEmbedding)
+            # fn_register is SparseEmbedding.register_tensor
             fn_register = lambda n, t: e.register_tensor(n, t)
             cls.prepare_embed(args, optim_mode, e, fn_register)
 
@@ -144,10 +154,14 @@ class EmbeddingOptimizer(ABC):
                 fn_local_rw(name, buf)
 
     def accumulate_grad(self, indices, grad_submat, fwd_idx):
+        # print("indices.device, grad_submat.device", indices.device, grad_submat.device)
         self.grad_list.append((indices, grad_submat))
         self.has_grad_list.append(fwd_idx)
 
     def forward(self, indices, name):
+        # print("self.sparse_embed.training and self.optimizer_device == 'cpu':")
+        # print(self.sparse_embed.training and self.optimizer_device == 'cpu')
+        # print("EmbeddingOptimizer of " + str(name) + " forward")
         if self.sparse_embed.training and self.optimizer_device == 'cpu':
             self.prepare_forward(indices, name)
         return EmbedLookupFunc.apply(self, self.dummy_tensor, indices, name)
@@ -158,6 +172,7 @@ class EmbeddingOptimizer(ABC):
             return
         merged_indices, inverse_indices = merge_grad_indices([indices for indices, _ in self.grad_list])
         grad_list = [grad for _, grad in self.grad_list]
+        # print("inverse_indices.device, grad_list[0].device", inverse_indices.device, grad_list[0].device)
         inverse_indices = inverse_indices.to(grad_list[0].device)
         merged_grad = merge_grad_list(grad_list, inverse_indices)
         self.update_step(merged_indices, inverse_indices, merged_grad, lr)
@@ -201,8 +216,10 @@ class AdamEmbedOptimizer(EmbeddingOptimizer):
         self.state_sum_sq_rw.embed.share_memory_()
 
     def prepare_forward(self, indices, name):
+        # print("state_sum_fo, state_sum_sq:", self.state_sum_fo_rw.embed.device, self.state_sum_sq_rw.embed.device)
         fo = self.state_sum_fo_rw.read(indices, name)
         sq = self.state_sum_sq_rw.read(indices, name)
+        # print("fo, sq:", fo.device, sq.device)
         self.grad_stats.append((fo, sq))
 
     def update_step(self, indices, inverse_indices, grad, lr):
@@ -210,6 +227,7 @@ class AdamEmbedOptimizer(EmbeddingOptimizer):
         beta2 = 0.999 # this might further improve the performance if we keep track of the optimization steps for each embedding rather than using a global optimization step for all embeddings
         # indices, grad on gpu
         stats_device = self.state_sum_sq_rw.embed.device
+        # print("update_step: indices.device, grad.device, stats_device", indices.device, grad.device, stats_device)
         with torch.no_grad():
             if self.optimizer_device == 'gpu':
                 indices = indices.to(stats_device)

@@ -14,6 +14,7 @@
 
 import os
 import sys
+import time
 import ctypes
 import numpy as np
 import torch
@@ -169,9 +170,15 @@ class OnlineSampler(object):
         while True:            
             next_buf_idx = 1 - buf_idx
             next_pos_ans, next_neg_ans, next_is_neg_mat, next_weights, next_arg_buffer = list_buffer[next_buf_idx]
+            
+            # T1 = time.perf_counter()
             next_q_type = self.sampler.next_batch(next_pos_ans.numpy(), next_neg_ans.numpy(), 
                                                   next_weights.numpy(), next_is_neg_mat.numpy(),
-                                                  next_arg_buffer.numpy())            
+                                                  next_arg_buffer.numpy())   
+            
+            # T2 = time.perf_counter()
+            # print('程序运行时间:%s毫秒' % ((T2 - T1)*1000))
+                 
             if self.weighted_style == 'u':
                 weights = uniform_weigths
             pos_ans, neg_ans, is_neg_mat, weights, arg_buffer = list_buffer[buf_idx]                
