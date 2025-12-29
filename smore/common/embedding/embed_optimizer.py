@@ -16,17 +16,9 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import time
 import math
-import numpy as np
 import torch
-from torch.autograd import Variable
-from torch.nn.parameter import Parameter
-from torch.multiprocessing import Queue, Pipe
-import torch.multiprocessing as mp
 import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
 from torch_scatter import scatter
 from functools import partial
 from abc import ABC, abstractmethod
@@ -34,6 +26,7 @@ from smore.common.embedding.sparse_embed import SparseEmbedding
 from smore.common.embedding.embed_rw import EmbeddingRW
 from smore.common.util import eval_tuple
 from smore.common.consts import eps
+
 
 def merge_grad_indices(idx_list):
     concatenated_indices = torch.cat(idx_list, dim=0)
@@ -116,12 +109,12 @@ class EmbeddingOptimizer(ABC):
         for e in list_sparse_embeds:
             assert isinstance(e, SparseEmbedding)
             # fn_register is SparseEmbedding.register_tensor
-            fn_register = lambda n, t: e.register_tensor(n, t)
+            def fn_register(n, t): return e.register_tensor(n, t)
             cls.prepare_embed(args, optim_mode, e, fn_register)
 
     def set_local_rw(self, name, tensor, gpu_id):
         cur_rw = EmbeddingRW(tensor, gpu_id=gpu_id)
-        setattr(self, name + '_rw', cur_rw)
+        setattr(self, name + "_rw", cur_rw)
 
     def __init__(self, args, sp_embed, gpu_id):
         self.args = args
@@ -138,10 +131,10 @@ class EmbeddingOptimizer(ABC):
 
         optim_mode = eval_tuple(args.optim_mode)
         self.optim_mode = optim_mode
-        assert self.optim_mode[0] in ['fast', 'aggr']
+        assert self.optim_mode[0] in ["fast", "aggr"]
         self.optimizer_name = optim_mode[1]
         self.optimizer_device = optim_mode[2]
-        assert self.optimizer_device in ['gpu', 'cpu']
+        assert self.optimizer_device in ["gpu", "cpu"]
         self.squeeze = self.optim_mode[3]
         self.queue_size = self.optim_mode[4]
 
@@ -162,7 +155,7 @@ class EmbeddingOptimizer(ABC):
         # print("self.sparse_embed.training and self.optimizer_device == 'cpu':")
         # print(self.sparse_embed.training and self.optimizer_device == 'cpu')
         # print("EmbeddingOptimizer of " + str(name) + " forward")
-        if self.sparse_embed.training and self.optimizer_device == 'cpu':
+        if self.sparse_embed.training and self.optimizer_device == "cpu":
             self.prepare_forward(indices, name)
         return EmbedLookupFunc.apply(self, self.dummy_tensor, indices, name)
 
@@ -224,22 +217,22 @@ class AdamEmbedOptimizer(EmbeddingOptimizer):
 
     def update_step(self, indices, inverse_indices, grad, lr):
         beta1 = 0.9
-        beta2 = 0.999 # this might further improve the performance if we keep track of the optimization steps for each embedding rather than using a global optimization step for all embeddings
+        beta2 = 0.999  # this might further improve the performance if we keep track of the optimization steps for each embedding rather than using a global optimization step for all embeddings
         # indices, grad on gpu
         stats_device = self.state_sum_sq_rw.embed.device
         # print("update_step: indices.device, grad.device, stats_device", indices.device, grad.device, stats_device)
         with torch.no_grad():
-            if self.optimizer_device == 'gpu':
+            if self.optimizer_device == "gpu":
                 indices = indices.to(stats_device)
             # for indices, grad in zip(indices_list, grad_list):
-            bias_correction1 = 1 - beta1 ** self.step
-            bias_correction2 = 1 - beta2 ** self.step
+            bias_correction1 = 1 - beta1**self.step
+            bias_correction2 = 1 - beta2**self.step
             indices = indices.to(stats_device)
             if self.squeeze:
-                grad_sum_sq = torch.mean(grad * grad, dim=1, keepdim=True) # gpu
+                grad_sum_sq = torch.mean(grad * grad, dim=1, keepdim=True)  # gpu
 
             # retreive old momentum
-            if self.optimizer_device == 'cpu':
+            if self.optimizer_device == "cpu":
                 list_fo_full, list_sq_full = zip(*self.grad_stats)
                 list_fo = self.filter_stats(list_fo_full)
                 grad_avg_fo = merge_grad_list(list_fo, inverse_indices, reduce_type="max")
@@ -253,16 +246,16 @@ class AdamEmbedOptimizer(EmbeddingOptimizer):
 
             # update momentum
             if self.squeeze:
-                grad_avg_sq.mul_(beta2).add_(grad_sum_sq * (1-beta2))
+                grad_avg_sq.mul_(beta2).add_(grad_sum_sq * (1 - beta2))
             else:
-                grad_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1-beta2)
-            grad_avg_fo.mul_(beta1).add_(grad, alpha=1-beta1)
+                grad_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
+            grad_avg_fo.mul_(beta1).add_(grad, alpha=1 - beta1)
 
             # calculate avg
             denom = (grad_avg_sq.sqrt() / math.sqrt(bias_correction2)).add_(eps)
 
             # calculate final grad and update embed_mat
-            tmp = -lr/bias_correction1 * grad_avg_fo/denom
+            tmp = -lr / bias_correction1 * grad_avg_fo / denom
             self.embed_rw.write(indices, tmp, name="embed_gd", additive=True)
 
             # copy new momentum to state_sum
@@ -293,22 +286,22 @@ class RMSpropEmbedOptimizer(EmbeddingOptimizer):
             # for indices, grad in zip(indices_list, grad_list):
             indices = indices.to(self.state_sum.device)
             if self.squeeze:
-                grad_sum = (grad * grad).mean(1) # gpu
-            if self.optimizer_device == 'cpu':
+                grad_sum = (grad * grad).mean(1)  # gpu
+            if self.optimizer_device == "cpu":
                 grad = grad.to(self.state_sum.device)
                 if self.squeeze:
                     grad_sum = grad_sum.to(self.state_sum.device)
 
             # retreive old momentum
-            square_avg = self.state_sum[indices] 
-            if self.optimizer_device == 'gpu':
+            square_avg = self.state_sum[indices]
+            if self.optimizer_device == "gpu":
                 square_avg = square_avg.to(grad.device)
 
             # update momentum
             if self.squeeze:
-                square_avg.mul_(alpha).add_(grad_sum * (1-alpha))
+                square_avg.mul_(alpha).add_(grad_sum * (1 - alpha))
             else:
-                square_avg.mul_(alpha).addcmul_(grad, grad, value=1-alpha)
+                square_avg.mul_(alpha).addcmul_(grad, grad, value=1 - alpha)
 
             # calculate avg
             avg = square_avg.sqrt().add_(eps)
@@ -316,13 +309,13 @@ class RMSpropEmbedOptimizer(EmbeddingOptimizer):
                 avg = avg.unsqueeze(1)
 
             # copy new momentum to state_sum
-            if self.optimizer_device == 'gpu':
+            if self.optimizer_device == "gpu":
                 square_avg = square_avg.to(self.state_sum.device)
             self.state_sum.index_copy_(0, indices, square_avg)
 
             # calculate final grad and update embed_mat
-            tmp = -lr * grad/avg
-            if self.optimizer_device == 'gpu':
+            tmp = -lr * grad / avg
+            if self.optimizer_device == "gpu":
                 tmp = tmp.to(self.sp_embed.device)
             self.sp_embed.embedding.index_add_(0, indices, tmp)
 
@@ -330,7 +323,7 @@ class RMSpropEmbedOptimizer(EmbeddingOptimizer):
 class AdaGradEmbedOptimizer(EmbeddingOptimizer):
 
     @classmethod
-    def prepare_embed(cls, args, optim_mode, embed, fn_register):        
+    def prepare_embed(cls, args, optim_mode, embed, fn_register):
         squeeze = optim_mode[3]
         if squeeze:
             fn_register("state_sum", torch.zeros(embed.embedding.size(0), 1))
@@ -348,21 +341,21 @@ class AdaGradEmbedOptimizer(EmbeddingOptimizer):
         # indices, grad on gpu
         stats_device = self.state_sum_rw.embed.device
         with torch.no_grad():
-            if self.optimizer_device == 'gpu':
+            if self.optimizer_device == "gpu":
                 indices = indices.to(stats_device)
             if self.squeeze:
-                grad_sum = torch.mean(grad * grad, dim=1, keepdim=True) # gpu
+                grad_sum = torch.mean(grad * grad, dim=1, keepdim=True)  # gpu
             else:
                 grad_sum = grad * grad
 
-            if self.optimizer_device == 'cpu':
+            if self.optimizer_device == "cpu":
                 list_sq = self.filter_stats(self.grad_stats)
                 square_avg = merge_grad_list(list_sq, inverse_indices, reduce_type="max")
             else:
                 square_avg = self.state_sum_rw.read(indices)
             square_avg = square_avg + grad_sum
             avg = square_avg.sqrt().add_(eps)
-            tmp = -lr * grad/avg
+            tmp = -lr * grad / avg
             self.embed_rw.write(indices, tmp, name="embed_gd", additive=True)
             self.state_sum_rw.write(indices, grad_sum, name="update_sq", additive=True)
 
@@ -370,13 +363,13 @@ class AdaGradEmbedOptimizer(EmbeddingOptimizer):
 def get_optim_class(args):
     optim_mode = eval_tuple(args.optim_mode)
     optimizer_name = optim_mode[1]
-    if optimizer_name == 'adam':
+    if optimizer_name == "adam":
         return AdamEmbedOptimizer
-    elif optimizer_name == 'rmsprop':
+    elif optimizer_name == "rmsprop":
         return RMSpropEmbedOptimizer
-    elif optimizer_name == 'adagrad':
+    elif optimizer_name == "adagrad":
         return AdaGradEmbedOptimizer
-    elif optimizer_name == 'sgd':
+    elif optimizer_name == "sgd":
         return SGDEmbedOptimizer
     else:
         raise NotImplementedError

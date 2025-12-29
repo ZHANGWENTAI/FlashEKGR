@@ -15,7 +15,6 @@
 import logging
 import collections
 import json
-import math
 import os
 import time
 from tqdm import tqdm
@@ -26,27 +25,27 @@ import torch.distributed as dist
 from torch.utils.data import DataLoader
 
 from smore.cpp_sampler.online_sampler import OnlineSampler
-from smore.common.util import (
-    name_query_dict, query_name_dict, thread_wrapped_func, 
-    log_metrics, eval_tuple
-)
+from smore.common.util import name_query_dict, query_name_dict, thread_wrapped_func, log_metrics, eval_tuple
 from smore.common.embedding.embed_optimizer import get_optim_class
-from smore.evaluation.dataloader import TestDataset
-from torchviz import make_dot
 
 eps = 1e-8
-def save_loss(loss,step,filename='/home/zhangwentai/smore/betae_loss.txt'):
-    if step % 100 == 0 :
-        with open(filename,'a') as f:
+
+
+def save_loss(loss, step, filename="/home/zhangwentai/smore/betae_loss.txt"):
+    if step % 100 == 0:
+        with open(filename, "a") as f:
             f.write(f"step{step},loss:{loss.item()}\n")
+
 
 def test_step_1p(model, args, train_sampler, test_dataloader, result_buffer, train_step, device, phase):
     model.eval()
     rank = dist.get_rank()
     logs = collections.defaultdict(collections.Counter)
     with torch.no_grad():
-        for list_heads, rels, list_tails, batch_neg_samples in tqdm(test_dataloader, disable=(not args.print_on_screen) or rank):
-            q_structs = [name_query_dict['1p'], name_query_dict['-1p']]
+        for list_heads, rels, list_tails, batch_neg_samples in tqdm(
+            test_dataloader, disable=(not args.print_on_screen) or rank
+        ):
+            q_structs = [name_query_dict["1p"], name_query_dict["-1p"]]
             ht = [(list_heads, list_tails), (list_tails, list_heads)]
 
             for (entities, hard_answers), query_structure in zip(ht, q_structs):
@@ -57,13 +56,17 @@ def test_step_1p(model, args, train_sampler, test_dataloader, result_buffer, tra
 
                 queries = torch.cat((entities.view(-1, 1), rels.view(-1, 1)), dim=-1)
 
-                positive_logits, negative_logits, _ = model(hard_answers, negative_samples, query_structure, queries, device=device)
+                positive_logits, negative_logits, _ = model(
+                    hard_answers, negative_samples, query_structure, queries, device=device
+                )
                 joint_logits = torch.cat((positive_logits.view(-1, 1), negative_logits), dim=-1)
                 argsort = torch.argsort(joint_logits, dim=1, descending=True)
                 ranking = argsort.clone().to(torch.float)
-                ranking = ranking.scatter_(1,
-                                            argsort,
-                                            torch.arange(joint_logits.shape[1]).to(torch.float).repeat(argsort.shape[0], 1).to(device))
+                ranking = ranking.scatter_(
+                    1,
+                    argsort,
+                    torch.arange(joint_logits.shape[1]).to(torch.float).repeat(argsort.shape[0], 1).to(device),
+                )
                 ans_ranking = ranking[:, 0].cpu().numpy()
                 for idx in range(joint_logits.shape[0]):
                     cur_rank = ans_ranking[idx] + 1
@@ -72,13 +75,13 @@ def test_step_1p(model, args, train_sampler, test_dataloader, result_buffer, tra
                     h3 = int(cur_rank <= 3)
                     h10 = int(cur_rank <= 10)
                     h1m = cur_rank == 1
-                    logs[query_structure]['MRR'] += mrr
-                    logs[query_structure]['HITS1'] += h1
-                    logs[query_structure]['HITS3'] += h3
-                    logs[query_structure]['HITS10'] += h10
-                    logs[query_structure]['HITS1max'] += h1m
-                    logs[query_structure]['num_hard_answer'] += 1
-                    logs[query_structure]['num_queries'] += 1
+                    logs[query_structure]["MRR"] += mrr
+                    logs[query_structure]["HITS1"] += h1
+                    logs[query_structure]["HITS3"] += h3
+                    logs[query_structure]["HITS10"] += h10
+                    logs[query_structure]["HITS1max"] += h1m
+                    logs[query_structure]["num_hard_answer"] += 1
+                    logs[query_structure]["num_queries"] += 1
 
     result_buffer.put((logs, train_step))
 
@@ -95,8 +98,10 @@ def test_step_mp(model, args, train_sampler, test_dataloader, result_buffer, tra
     negative_sample_bias = None
 
     with torch.no_grad():
-        for negative_sample, queries, queries_unflatten, query_structures, easy_answers, hard_answers in tqdm(test_dataloader, disable=(not args.print_on_screen) or rank):
-            assert len(queries_unflatten) == 1 # batch size == 1
+        for negative_sample, queries, queries_unflatten, query_structures, easy_answers, hard_answers in tqdm(
+            test_dataloader, disable=(not args.print_on_screen) or rank
+        ):
+            assert len(queries_unflatten) == 1  # batch size == 1
             query_structure = query_structures[0]
             query_mat = torch.LongTensor(queries)
 
@@ -108,23 +113,26 @@ def test_step_mp(model, args, train_sampler, test_dataloader, result_buffer, tra
                 if negative_sample_bias is None:
                     negative_sample_bias = torch.zeros([1, args.nentity]).to(device)
             else:
-                negative_sample_bias = torch.where(negative_sample == -1, -1e6, 0.).to(device)
+                negative_sample_bias = torch.where(negative_sample == -1, -1e6, 0.0).to(device)
                 negative_sample = torch.where(negative_sample == -1, 0, negative_sample)
 
-            _, negative_logit, _= model(None, negative_sample, query_structure, query_mat, device=device, all_neg=all_embed)
+            _, negative_logit, _ = model(
+                None, negative_sample, query_structure, query_mat, device=device, all_neg=all_embed
+            )
             negative_logit += negative_sample_bias
             argsort = torch.argsort(negative_logit, dim=1, descending=True)
             ranking = argsort.clone().to(torch.float)
-            ranking = ranking.scatter_(1,
-                                       argsort,
-                                       torch.arange(negative_logit.shape[1]).to(torch.float).repeat(argsort.shape[0], 1).to(device))
+            ranking = ranking.scatter_(
+                1, argsort, torch.arange(negative_logit.shape[1]).to(torch.float).repeat(argsort.shape[0], 1).to(device)
+            )
 
-            for idx, (query, query_structure, easy_answer, hard_answer) in enumerate(zip(queries_unflatten,
-                                                                                         query_structures,
-                                                                                         easy_answers,
-                                                                                         hard_answers)):
+            for idx, (query, query_structure, easy_answer, hard_answer) in enumerate(
+                zip(queries_unflatten, query_structures, easy_answers, hard_answers)
+            ):
                 num_hard = len(hard_answer)
-                if (num_hard == 1 and list(hard_answer)[0] == -1): # the ground truth is not in the candidate set, mrr should be zero
+                if (
+                    num_hard == 1 and list(hard_answer)[0] == -1
+                ):  # the ground truth is not in the candidate set, mrr should be zero
                     mrr = h1 = h3 = h10 = h1m = 0
                 else:
                     if test_all:
@@ -137,24 +145,24 @@ def test_step_mp(model, args, train_sampler, test_dataloader, result_buffer, tra
                     cur_ranking, indices = torch.sort(cur_ranking)
                     masks = indices >= num_easy
                     answer_list = torch.arange(num_hard + num_easy).to(torch.float).to(device)
-                    cur_ranking = cur_ranking - answer_list + 1 # filtered setting
-                    cur_ranking = cur_ranking[masks] # only take indices that belong to the hard answers
-                    mrr = torch.mean(1./cur_ranking).item()
+                    cur_ranking = cur_ranking - answer_list + 1  # filtered setting
+                    cur_ranking = cur_ranking[masks]  # only take indices that belong to the hard answers
+                    mrr = torch.mean(1.0 / cur_ranking).item()
                     h1 = torch.mean((cur_ranking <= 1).to(torch.float)).item()
                     h3 = torch.mean((cur_ranking <= 3).to(torch.float)).item()
                     h10 = torch.mean((cur_ranking <= 10).to(torch.float)).item()
                     h1m = ((cur_ranking[0] == 1).to(torch.float)).item()
 
-                logs[query_structure]['MRR'] += mrr
-                logs[query_structure]['HITS1'] += h1
-                logs[query_structure]['HITS3'] += h3
-                logs[query_structure]['HITS10'] += h10
-                logs[query_structure]['HITS1max'] += h1m
-                logs[query_structure]['num_hard_answer'] += 1
-                logs[query_structure]['num_queries'] += 1
+                logs[query_structure]["MRR"] += mrr
+                logs[query_structure]["HITS1"] += h1
+                logs[query_structure]["HITS3"] += h3
+                logs[query_structure]["HITS10"] += h10
+                logs[query_structure]["HITS1max"] += h1m
+                logs[query_structure]["num_hard_answer"] += 1
+                logs[query_structure]["num_queries"] += 1
 
             if step % args.test_log_steps == 0:
-                logging.info('Evaluating the model... (%d/%d)' % (step, total_steps))
+                logging.info("Evaluating the model... (%d/%d)" % (step, total_steps))
 
             step += 1
 
@@ -169,7 +177,9 @@ def train_step_mp(model, dense_optimizers, embedding_optimizers, train_iterator,
         embedding_optimizers[embedding_name].zero_grad()
 
     t1 = time.time()
-    positive_sample, negative_sample, is_negative_mat, subsampling_weight, batch_queries, query_structures = next(train_iterator)
+    positive_sample, negative_sample, is_negative_mat, subsampling_weight, batch_queries, query_structures = next(
+        train_iterator
+    )
 
     if "cuda" in device:
         subsampling_weight = subsampling_weight.cuda(device)
@@ -177,35 +187,33 @@ def train_step_mp(model, dense_optimizers, embedding_optimizers, train_iterator,
             is_negative_mat = is_negative_mat.cuda(device)
 
     t2 = time.time()
-    positive_logit, negative_logit, reg_loss = model(positive_sample, 
-                                                     negative_sample,
-                                                     query_structures[0],
-                                                     batch_queries,
-                                                     device=device,
-                                                     reg_coeff=args.reg_coeff)
+    positive_logit, negative_logit, reg_loss = model(
+        positive_sample, negative_sample, query_structures[0], batch_queries, device=device, reg_coeff=args.reg_coeff
+    )
     t3 = time.time()
-    
+
     if is_negative_mat is not None:
         negative_logit = negative_logit * is_negative_mat
     if args.negative_adversarial_sampling:
-        negative_score = (F.softmax(negative_logit * args.adversarial_temperature, dim=1).detach() \
-                                        * F.logsigmoid(-negative_logit)).sum(dim=1)
+        negative_score = (
+            F.softmax(negative_logit * args.adversarial_temperature, dim=1).detach() * F.logsigmoid(-negative_logit)
+        ).sum(dim=1)
     else:
         negative_score = F.logsigmoid(-negative_logit).mean(dim=1)
     positive_score = F.logsigmoid(positive_logit).squeeze(dim=1)
-    if eval_tuple(args.online_sample_mode)[2] == 'w':
-        positive_sample_loss = - (subsampling_weight * positive_score).sum()
-        negative_sample_loss = - (subsampling_weight * negative_score).sum()
+    if eval_tuple(args.online_sample_mode)[2] == "w":
+        positive_sample_loss = -(subsampling_weight * positive_score).sum()
+        negative_sample_loss = -(subsampling_weight * negative_score).sum()
         positive_sample_loss /= subsampling_weight.sum()
         negative_sample_loss /= subsampling_weight.sum()
     else:
-        assert eval_tuple(args.online_sample_mode)[2] == 'u'
+        assert eval_tuple(args.online_sample_mode)[2] == "u"
         positive_sample_loss = -torch.mean(positive_score)
         negative_sample_loss = -torch.mean(negative_score)
 
-    loss = (positive_sample_loss + negative_sample_loss + reg_loss*args.reg_coeff) / 2 / world_size
+    loss = (positive_sample_loss + negative_sample_loss + reg_loss * args.reg_coeff) / 2 / world_size
     loss.backward()
-    
+
     t4 = time.time()
     for embedding_name in embedding_optimizers:
         embedding_optimizers[embedding_name].apply_grad(lr)
@@ -223,22 +231,22 @@ def train_step_mp(model, dense_optimizers, embedding_optimizers, train_iterator,
     model.t_opt += t5 - t4
     model.t_total += t5 - t1
     log = {
-        'positive_sample_loss': positive_sample_loss.item(),
-        'negative_sample_loss': negative_sample_loss.item(),
-        'loss': loss.item(),
+        "positive_sample_loss": positive_sample_loss.item(),
+        "negative_sample_loss": negative_sample_loss.item(),
+        "loss": loss.item(),
     }
-    
-    log['msg'] = "step: {}, t_read: {:.5f}, t_fwd: {:.5f}, t_loss: {:.5f}, t_opt: {:.5f}, t_total: {:.5f}".format(
-                step,
-                model.t_read/(step+1),
-                model.t_fwd/(step+1),
-                model.t_loss/(step+1),
-                model.t_opt/(step+1),
-                model.t_total/(step+1)
-                )
+
+    log["msg"] = "step: {}, t_read: {:.5f}, t_fwd: {:.5f}, t_loss: {:.5f}, t_opt: {:.5f}, t_total: {:.5f}".format(
+        step,
+        model.t_read / (step + 1),
+        model.t_fwd / (step + 1),
+        model.t_loss / (step + 1),
+        model.t_opt / (step + 1),
+        model.t_total / (step + 1),
+    )
 
     if args.reg_coeff != 0 and reg_loss > 0:
-        log['reg_loss'] = reg_loss.item()
+        log["reg_loss"] = reg_loss.item()
     return log
 
 
@@ -246,13 +254,16 @@ def save_model(model, optimizers, embedding_optimizers, save_variable_list, args
     for name in embedding_optimizers:
         assert embedding_optimizers[name].share_optim_stats
     argparse_dict = vars(args)
-    with open(os.path.join(args.save_path, 'config.json'), 'w') as fjson:
+    with open(os.path.join(args.save_path, "config.json"), "w") as fjson:
         json.dump(argparse_dict, fjson)
-    torch.save({
-        **save_variable_list,
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': [optimizer.state_dict() for optimizer in optimizers],
-    }, os.path.join(args.save_path, 'checkpoint'))
+    torch.save(
+        {
+            **save_variable_list,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": [optimizer.state_dict() for optimizer in optimizers],
+        },
+        os.path.join(args.save_path, "checkpoint"),
+    )
 
 
 def train_func(args, kg_mem, opt_stats, model, eval_dict, training_tasks, ro_feat, gpu_id):
@@ -261,8 +272,8 @@ def train_func(args, kg_mem, opt_stats, model, eval_dict, training_tasks, ro_fea
     world_size = dist.get_world_size()
     rank = dist.get_rank()
     training_logs = []
-    init_step = opt_stats['init_step']
-    warm_up_steps = opt_stats['warm_up_steps']
+    init_step = opt_stats["init_step"]
+    warm_up_steps = opt_stats["warm_up_steps"]
 
     data_loaders = {}
     for key in eval_dict:
@@ -270,13 +281,13 @@ def train_func(args, kg_mem, opt_stats, model, eval_dict, training_tasks, ro_fea
             eval_dict[key].data,
             batch_size=args.eval_batch_size,
             num_workers=1,
-            collate_fn=eval_dict[key].data.collate_fn
+            collate_fn=eval_dict[key].data.collate_fn,
         )
 
     if gpu_id != -1:
         device = "cuda:{}".format(gpu_id)
     else:
-        device = 'cpu'
+        device = "cpu"
     if "cuda" in device:
         model.to_device(device)
 
@@ -289,29 +300,35 @@ def train_func(args, kg_mem, opt_stats, model, eval_dict, training_tasks, ro_fea
         model.attach_feature("relation", ro_feat["relation"], gpu_id, is_sparse=False)
 
     old_sampler = None
-    init_sampler_type = 'nosearch' if args.sampler_type.startswith('mix') else args.sampler_type
-    if args.sampler_type.startswith('mix'):
-        pct = float(args.sampler_type.split('_')[-1])
+    init_sampler_type = "nosearch" if args.sampler_type.startswith("mix") else args.sampler_type
+    if args.sampler_type.startswith("mix"):
+        pct = float(args.sampler_type.split("_")[-1])
         switch_step = int(args.max_steps * pct)
     else:
         switch_step = args.max_steps + 1
 
-    train_sampler = OnlineSampler(kg, training_tasks, args.negative_sample_size, eval_tuple(args.online_sample_mode), args.normalized_structure_prob, 
-                                  sampler_type=init_sampler_type,
-                                  share_negative=args.share_negative,
-                                  same_in_batch=args.train_dataset_mode=='single',
-                                  num_threads=args.cpu_num)
+    train_sampler = OnlineSampler(
+        kg,
+        training_tasks,
+        args.negative_sample_size,
+        eval_tuple(args.online_sample_mode),
+        args.normalized_structure_prob,
+        sampler_type=init_sampler_type,
+        share_negative=args.share_negative,
+        same_in_batch=args.train_dataset_mode == "single",
+        num_threads=args.cpu_num,
+    )
 
     if not args.do_train:
         dist.barrier(device_ids=[rank])
         for phase in eval_dict:
-            logging.info('[{}] Evaluating on {} Dataset...'.format(os.getpid(), phase))
+            logging.info("[{}] Evaluating on {} Dataset...".format(os.getpid(), phase))
             d = eval_dict[phase]
             test_step_mp(model, args, train_sampler, data_loaders[phase], d.buffer, init_step, device, phase)
             eval_dict[phase].buffer.put((None, None))
         return
 
-    current_learning_rate = opt_stats['current_learning_rate']
+    current_learning_rate = opt_stats["current_learning_rate"]
     dense_lr = args.dense_learning_rate or current_learning_rate
     dense_param_names, dense_params = zip(*list(model.named_dense_parameters(exclude_embedding=True)))
     dense_optimizer = torch.optim.Adam(dense_params, lr=dense_lr)
@@ -324,16 +341,16 @@ def train_func(args, kg_mem, opt_stats, model, eval_dict, training_tasks, ro_fea
         logging.info("[{}], dense embed params: {}".format(os.getpid(), dense_embed_names))
 
         optim_def = eval_tuple(args.optim_mode)[1]
-        if optim_def == 'adam':
+        if optim_def == "adam":
             dense_embed_optimizer = torch.optim.Adam(dense_embeds, lr=current_learning_rate)
-        elif optim_def == 'adagrad':
+        elif optim_def == "adagrad":
             dense_embed_optimizer = torch.optim.Adagrad(dense_embeds, lr=current_learning_rate)
         else:
             raise NotImplementedError
         optimizers.append(dense_embed_optimizer)
 
-    if opt_stats['optimizer_stats'] is not None:
-        list_stats_dict = opt_stats['optimizer_stats']
+    if opt_stats["optimizer_stats"] is not None:
+        list_stats_dict = opt_stats["optimizer_stats"]
         for i in range(len(list_stats_dict)):
             optimizers[i].load_state_dict(list_stats_dict[i])
 
@@ -349,35 +366,51 @@ def train_func(args, kg_mem, opt_stats, model, eval_dict, training_tasks, ro_fea
         pbar = tqdm(range(step_start, step_end), disable=(not args.print_on_screen) or rank)
         if step_start >= switch_step and old_sampler is None:
             old_sampler = (train_sampler, train_iterator)
-            train_sampler = OnlineSampler(kg, training_tasks, args.negative_sample_size, eval_tuple(args.online_sample_mode), args.normalized_structure_prob, 
-                                  sampler_type='sqrt',
-                                  share_negative=args.share_negative,
-                                  same_in_batch=args.train_dataset_mode=='single',
-                                  num_threads=args.cpu_num)
+            train_sampler = OnlineSampler(
+                kg,
+                training_tasks,
+                args.negative_sample_size,
+                eval_tuple(args.online_sample_mode),
+                args.normalized_structure_prob,
+                sampler_type="sqrt",
+                share_negative=args.share_negative,
+                same_in_batch=args.train_dataset_mode == "single",
+                num_threads=args.cpu_num,
+            )
             train_sampler.set_seed(1)
             train_iterator = train_sampler.batch_generator(args.batch_size)
-            print('sampler switched to sqrt')
+            print("sampler switched to sqrt")
         for step in pbar:
-            log = train_step_mp(model, optimizers, embedding_optimizers, train_iterator, args, step, current_learning_rate, device=device, world_size=world_size)
-            log_msg = log['msg']
+            log = train_step_mp(
+                model,
+                optimizers,
+                embedding_optimizers,
+                train_iterator,
+                args,
+                step,
+                current_learning_rate,
+                device=device,
+                world_size=world_size,
+            )
+            log_msg = log["msg"]
             pbar.set_description(log_msg)
-            del log['msg']
+            del log["msg"]
             training_logs.append(log)
 
-            if args.lr_schedule == 'step':
-                if step >= warm_up_steps:            
+            if args.lr_schedule == "step":
+                if step >= warm_up_steps:
                     current_learning_rate = current_learning_rate / 5
-                    logging.info('Change learning_rate to %f at step %d' % (current_learning_rate, step))
+                    logging.info("Change learning_rate to %f at step %d" % (current_learning_rate, step))
                     for param_group in dense_embed_optimizer.param_groups:
-                        param_group['lr'] = current_learning_rate
+                        param_group["lr"] = current_learning_rate
                     warm_up_steps = warm_up_steps * 1.5
 
             if step and step % args.save_checkpoint_steps == 0:
                 if rank == 0:
                     save_variable_list = {
-                            'step': step, 
-                            'current_learning_rate': current_learning_rate,
-                            'warm_up_steps': warm_up_steps
+                        "step": step,
+                        "current_learning_rate": current_learning_rate,
+                        "warm_up_steps": warm_up_steps,
                     }
                     save_model(model, optimizers, embedding_optimizers, save_variable_list, args)
                 dist.barrier(device_ids=[rank])
@@ -385,14 +418,14 @@ def train_func(args, kg_mem, opt_stats, model, eval_dict, training_tasks, ro_fea
             if step % args.log_steps == 0:
                 metrics = {}
                 for metric in training_logs[0].keys():
-                    metrics[metric] = sum([log[metric] for log in training_logs])/len(training_logs)
+                    metrics[metric] = sum([log[metric] for log in training_logs]) / len(training_logs)
 
-                log_metrics('[{}] Training average'.format(os.getpid()), step, metrics)
+                log_metrics("[{}] Training average".format(os.getpid()), step, metrics)
                 training_logs = []
 
         dist.barrier(device_ids=[rank])
         for phase in eval_dict:
-            logging.info('[{}] Evaluating on {} Dataset...'.format(os.getpid(), phase))
+            logging.info("[{}] Evaluating on {} Dataset...".format(os.getpid(), phase))
             d = eval_dict[phase]
             test_step_mp(model, args, train_sampler, data_loaders[phase], d.buffer, step, device, phase)
         dist.barrier(device_ids=[rank])
@@ -407,9 +440,9 @@ def train_func(args, kg_mem, opt_stats, model, eval_dict, training_tasks, ro_fea
 def train_mp(args, kg_mem, opt_stats, model, eval_dict, training_tasks, ro_feat, gpu_id):
     if len(args.gpus) > 1:
         torch.set_num_threads(1)
-    os.environ['MASTER_ADDR'] = '127.0.0.1'
-    os.environ['MASTER_PORT'] = args.port
-    dist.init_process_group('nccl', rank=gpu_id, world_size=len(args.gpus))
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = args.port
+    dist.init_process_group("nccl", rank=gpu_id, world_size=len(args.gpus))
     train_func(args, kg_mem, opt_stats, model, eval_dict, training_tasks, ro_feat, gpu_id)
 
 
@@ -434,12 +467,14 @@ def async_aggr(args, result_buffer, writer_buffer, mode):
         if num_received == num_workers:
             metrics = collections.defaultdict(lambda: collections.defaultdict(int))
             for query_structure in all_result_dicts:
-                num_queries = sum([result_dict['num_queries'] for result_dict in all_result_dicts[query_structure]])
+                num_queries = sum([result_dict["num_queries"] for result_dict in all_result_dicts[query_structure]])
                 for metric in all_result_dicts[query_structure][0].keys():
-                    if metric in ['num_hard_answer', 'num_queries']:
+                    if metric in ["num_hard_answer", "num_queries"]:
                         continue
-                    metrics[query_structure][metric] = sum([result_dict[metric] for result_dict in all_result_dicts[query_structure]]) / num_queries
-                metrics[query_structure]['num_queries'] = num_queries
+                    metrics[query_structure][metric] = (
+                        sum([result_dict[metric] for result_dict in all_result_dicts[query_structure]]) / num_queries
+                    )
+                metrics[query_structure]["num_queries"] = num_queries
             average_metrics = collections.defaultdict(float)
             all_metrics = collections.defaultdict(float)
 
@@ -447,24 +482,26 @@ def async_aggr(args, result_buffer, writer_buffer, mode):
             num_queries = 0
             for query_structure in metrics:
                 qname = query_name_dict[query_structure] if query_structure in query_name_dict else str(query_structure)
-                log_metrics(mode+" "+qname, step, metrics[query_structure])
+                log_metrics(mode + " " + qname, step, metrics[query_structure])
                 for metric in metrics[query_structure]:
                     all_metrics["_".join([qname, metric])] = metrics[query_structure][metric]
-                    if metric != 'num_queries':
+                    if metric != "num_queries":
                         average_metrics["_".join([metric, "qs"])] += metrics[query_structure][metric]
-                        average_metrics["_".join([metric, "q"])] += metrics[query_structure][metric] * metrics[query_structure]['num_queries']
-                num_queries += metrics[query_structure]['num_queries']
+                        average_metrics["_".join([metric, "q"])] += (
+                            metrics[query_structure][metric] * metrics[query_structure]["num_queries"]
+                        )
+                num_queries += metrics[query_structure]["num_queries"]
                 num_query_structures += 1
 
             for metric in average_metrics:
-                if '_qs' in metric:
+                if "_qs" in metric:
                     average_metrics[metric] /= num_query_structures
                 else:
                     average_metrics[metric] /= num_queries
                 all_metrics["_".join(["average", metric])] = average_metrics[metric]
             for metric in all_metrics:
                 print(metric, all_metrics[metric])
-            log_metrics('%s average'%mode, step, average_metrics)
+            log_metrics("%s average" % mode, step, average_metrics)
 
             writer_buffer.put((dict(metrics), dict(average_metrics), step))
             all_result_dicts = collections.defaultdict(list)

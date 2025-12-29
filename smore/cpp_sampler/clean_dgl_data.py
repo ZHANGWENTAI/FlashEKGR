@@ -14,14 +14,12 @@
 
 import os
 import sys
-import struct
-import subprocess
 from tqdm import tqdm
 
 
 def load_dict(fname):
     d = {}
-    with open(fname, 'r') as f:
+    with open(fname, "r") as f:
         for row in f:
             row = row.strip().split()
             x = int(row[0])
@@ -30,36 +28,36 @@ def load_dict(fname):
     return d
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     data_folder = sys.argv[1]
 
-    if data_folder.endswith('Freebase'):
-        with open(os.path.join(data_folder, 'entity2id.txt'), 'r') as f:
+    if data_folder.endswith("Freebase"):
+        with open(os.path.join(data_folder, "entity2id.txt"), "r") as f:
             num_entities = int(f.readline().strip())
-        with open(os.path.join(data_folder, 'relation2id.txt'), 'r') as f:
+        with open(os.path.join(data_folder, "relation2id.txt"), "r") as f:
             num_relations = int(f.readline().strip())
-        row_fn = lambda e1, r, e2: (int(e1), int(e2), int(r))
+
+        def row_fn(e1, r, e2): return (int(e1), int(e2), int(r))
     else:
-        rel_dict = load_dict(os.path.join(data_folder, 'relations.dict'))
-        ent_dict = load_dict(os.path.join(data_folder, 'entities.dict'))
+        rel_dict = load_dict(os.path.join(data_folder, "relations.dict"))
+        ent_dict = load_dict(os.path.join(data_folder, "entities.dict"))
         num_relations = len(rel_dict)
         num_entities = len(ent_dict)
-        row_fn = lambda e1, r, e2: (ent_dict[e1], rel_dict[r], ent_dict[e2])
-    print('# entities', num_entities)
-    print('# relations', num_relations)
+        def row_fn(e1, r, e2): return (ent_dict[e1], rel_dict[r], ent_dict[e2])
+    print("# entities", num_entities)
+    print("# relations", num_relations)
 
-    with open(os.path.join(data_folder, 'stats.txt'), 'w') as f:
-        f.write('numentity: %d\nnumrelations: %d\n' % (num_entities, num_relations * 2))
+    with open(os.path.join(data_folder, "stats.txt"), "w") as f:
+        f.write("numentity: %d\nnumrelations: %d\n" % (num_entities, num_relations * 2))
 
-    for phase in ['train', 'valid', 'test']:
-        fname = os.path.join(data_folder, '%s.txt' % phase)
-        fout = open(os.path.join(data_folder, '%s_bidir.txt' % phase), 'w')        
+    for phase in ["train", "valid", "test"]:
+        fname = os.path.join(data_folder, "%s.txt" % phase)
+        fout = open(os.path.join(data_folder, "%s_bidir.txt" % phase), "w")
         flat_buf = []
-        with open(fname, 'r') as f:
+        with open(fname, "r") as f:
             for row in tqdm(f):
                 e1, r, e2 = row.strip().split()
                 e1, r, e2 = row_fn(e1, r, e2)
-                fout.write('%d %d %d\n' % (e1, r * 2, e2))
-                fout.write('%d %d %d\n' % (e2, r * 2 + 1, e1))                
+                fout.write("%d %d %d\n" % (e1, r * 2, e2))
+                fout.write("%d %d %d\n" % (e2, r * 2 + 1, e1))
         fout.close()
-

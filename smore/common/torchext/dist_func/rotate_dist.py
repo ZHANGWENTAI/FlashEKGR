@@ -14,7 +14,6 @@
 
 import torch
 import extlib_cuda as extlib
-import torch.nn.functional as F
 from torch.nn.parameter import Parameter
 
 
@@ -81,18 +80,18 @@ def test_rotate():
     im = Parameter(torch.randn(1, 20, 200).cuda())
 
     l2 = rotate_dist(entity, re, im)
-    loss = torch.sum(l2 ** 2) * 3.14
+    loss = torch.sum(l2**2) * 3.14
     print(loss.item())
     loss.backward()
     e2 = entity.grad.clone()
     r2 = re.grad.clone()
     i2 = im.grad.clone()
 
-    print('\n========\n')
+    print("\n========\n")
     entity.grad = re.grad = im.grad = None
 
     l1 = naive_rotate_dist(entity, re, im)
-    loss = torch.sum(l1 ** 2) * 3.14
+    loss = torch.sum(l1**2) * 3.14
     print(loss.item())
     loss.backward()
     e1 = entity.grad.clone()
@@ -104,9 +103,10 @@ def test_rotate():
     print(torch.mean(torch.abs(i1 - i2)))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import numpy as np
     import random
+
     torch.manual_seed(1)
     np.random.seed(1)
     random.seed(1)

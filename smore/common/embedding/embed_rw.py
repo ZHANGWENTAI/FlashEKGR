@@ -18,9 +18,7 @@ from __future__ import print_function
 
 
 import torch
-import torch.nn as nn
 import extlib_cuda as extlib
-from abc import ABC, abstractmethod
 
 
 class DummyJob(object):
@@ -35,9 +33,9 @@ class EmbeddingReadOnly(object):
         self.gpu_id = gpu_id
         self.embed_dim = embed.shape[1]
         if gpu_id == -1:
-            self.device = 'cpu'
+            self.device = "cpu"
         else:
-            self.device = 'cuda:{}'.format(gpu_id)
+            self.device = "cuda:{}".format(gpu_id)
         if self.embed.is_cuda:
             assert self.embed.device == torch.device(self.device)
         self.dummy_job = DummyJob()
@@ -88,12 +86,8 @@ class EmbeddingReadOnly(object):
         # print(buf.shape)
         self.read_src_cache[name] = indices
         with torch.cuda.stream(self.stream):
-            job_handle = extlib.async_read(self.read_thread_pool,
-                                           indices,
-                                           self.embed,
-                                           buf,
-                                           out)
-            submat = out[:indices.shape[0]]
+            job_handle = extlib.async_read(self.read_thread_pool, indices, self.embed, buf, out)
+            submat = out[: indices.shape[0]]
             submat.job_handle = job_handle
         return submat
 
@@ -102,7 +96,7 @@ class EmbeddingRW(EmbeddingReadOnly):
     def __init__(self, embed, gpu_id=-1):
         super(EmbeddingRW, self).__init__(embed, gpu_id)
         self.write_thread_pool = self.read_thread_pool
-        self.write_buf = {}        
+        self.write_buf = {}
         self.write_src_cache = {}
 
     def write(self, indices, values, name=None, additive=False):
@@ -126,18 +120,14 @@ class EmbeddingRW(EmbeddingReadOnly):
             self.last_write_jobs[name].sync()
         buf, _ = self.get_or_create_buf(name, indices.shape[0], self.write_buf, gpu_buf=False)
         if buf.shape[0] > indices.shape[0]:
-            buf = buf[:indices.shape[0]]
+            buf = buf[: indices.shape[0]]
         with torch.cuda.stream(self.stream):
-            job_handle = extlib.async_write(self.write_thread_pool, 
-                                            indices,
-                                            self.embed,
-                                            buf,
-                                            values,
-                                            src_event,
-                                            additive)
+            job_handle = extlib.async_write(
+                self.write_thread_pool, indices, self.embed, buf, values, src_event, additive
+            )
         self.write_src_cache[name] = (src_event, indices, values)
         self.last_write_jobs[name] = job_handle
         return job_handle
- 
+
     def add(self, indices, values, name="default"):
         return self.write(indices, values, name, additive=True)

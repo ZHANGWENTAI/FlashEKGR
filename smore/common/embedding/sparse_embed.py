@@ -16,12 +16,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import logging
-import numpy as np
 import torch
 import torch.nn as nn
 
 from smore.common.embedding.embed_rw import DummyJob
+
 
 class SparseEmbedding(nn.Module):
     """Sparse embedding"""
@@ -42,11 +41,7 @@ class SparseEmbedding(nn.Module):
         return self.embedding.shape
 
     def init_params(self, lb, ub):
-        nn.init.uniform_(
-            tensor=self.embedding, 
-            a=lb,
-            b=ub
-        )
+        nn.init.uniform_(tensor=self.embedding, a=lb, b=ub)
 
     def register_tensor(self, name, tensor_obj):
         self.register_buffer(name, tensor_obj)
@@ -66,4 +61,6 @@ class SparseEmbedding(nn.Module):
                 mat = self.embedding[indices]
             mat.job_handle = self.dummy_job
             return mat
+
+
 #           return torch.index_select(self.embedding, dim=0, index=indices.to(self.embedding.device))

@@ -17,10 +17,7 @@ from __future__ import division
 from __future__ import print_function
 
 
-import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from smore.common.embedding.sparse_embed import SparseEmbedding
 from smore.models.kg_reasoning import KGReasoning
 from smore.models.featured_embedding import get_feat_embed_mod
@@ -29,21 +26,44 @@ from smore.common.torchext.ext_ops import l1_dist, l2_dist
 
 
 class VecReasoning(KGReasoning):
-    def __init__(self, nentity, nrelation, hidden_dim, gamma, 
-                 optim_mode, batch_size, test_batch_size=1, sparse_embeddings=None, 
-                 sparse_device='gpu', use_cuda=False, query_name_dict=None, model_config=None, logit_impl='native'):
-        super(VecReasoning, self).__init__(nentity=nentity, nrelation=nrelation, hidden_dim=hidden_dim, 
-                                           gamma=gamma, optim_mode=optim_mode, batch_size=batch_size, test_batch_size=test_batch_size,
-                                           sparse_embeddings=sparse_embeddings, sparse_device=sparse_device, use_cuda=use_cuda, 
-                                           query_name_dict=query_name_dict, logit_impl=logit_impl)
-        self.geo = 'vec'
+    def __init__(
+        self,
+        nentity,
+        nrelation,
+        hidden_dim,
+        gamma,
+        optim_mode,
+        batch_size,
+        test_batch_size=1,
+        sparse_embeddings=None,
+        sparse_device="gpu",
+        use_cuda=False,
+        query_name_dict=None,
+        model_config=None,
+        logit_impl="native",
+    ):
+        super(VecReasoning, self).__init__(
+            nentity=nentity,
+            nrelation=nrelation,
+            hidden_dim=hidden_dim,
+            gamma=gamma,
+            optim_mode=optim_mode,
+            batch_size=batch_size,
+            test_batch_size=test_batch_size,
+            sparse_embeddings=sparse_embeddings,
+            sparse_device=sparse_device,
+            use_cuda=use_cuda,
+            query_name_dict=query_name_dict,
+            logit_impl=logit_impl,
+        )
+        self.geo = "vec"
         self.entity_embedding = SparseEmbedding(nentity, self.entity_dim)
         self.center_net = CenterIntersection(self.entity_dim)
         self.num_embedding_component = 1
         for c in model_config:
-            if c == 'l2':
+            if c == "l2":
                 self.dist_func = l2_dist
-            if c == 'l1':
+            if c == "l1":
                 self.dist_func = l1_dist
         self.init_params()
 
@@ -58,21 +78,21 @@ class VecReasoning(KGReasoning):
     def relation_projection(self, cur_embedding, relation_ids):
         relation_embedding = self.relation_embedding(relation_ids).unsqueeze(1)
         return [cur_embedding[0] + relation_embedding]
-    
+
     def retrieve_embedding(self, entity_ids):
-        '''
+        """
         Retrieve the entity embeddings given the entity indices
         Params:
             entity_ids: a list of entities indices
-        '''
+        """
         embedding = self.entity_embedding(entity_ids)
-        return [embedding.unsqueeze(1)] # [num_queries, 1, embedding_dim]
-    
+        return [embedding.unsqueeze(1)]  # [num_queries, 1, embedding_dim]
+
     def retrieve_relation_embedding(self, relation_ids):
         return self.relation_embedding(relation_ids).unsqueeze(1)
-    
+
     def intersection_between_stacked_embedding(self, stacked_embedding_list):
-        embedding = self.center_net(stacked_embedding_list) # [32, 6, 16]
+        embedding = self.center_net(stacked_embedding_list)  # [32, 6, 16]
         return [embedding]
 
     def native_cal_logit(self, entity_embedding, entity_feat, query_embedding):
@@ -100,16 +120,40 @@ class VecReasoning(KGReasoning):
 
 
 class VecFeatured(VecReasoning):
-    def __init__(self, nentity, nrelation, hidden_dim, gamma,
-                 optim_mode, batch_size, test_batch_size=1, sparse_embeddings=None,
-                 sparse_device='gpu', use_cuda=False, query_name_dict=None, model_config=None, logit_impl='native'):
+    def __init__(
+        self,
+        nentity,
+        nrelation,
+        hidden_dim,
+        gamma,
+        optim_mode,
+        batch_size,
+        test_batch_size=1,
+        sparse_embeddings=None,
+        sparse_device="gpu",
+        use_cuda=False,
+        query_name_dict=None,
+        model_config=None,
+        logit_impl="native",
+    ):
         feature_mod = get_feat_embed_mod(model_config[0:1], hidden_dim, hidden_dim)
         if not feature_mod.embedding_needed:
             nentity = nrelation = 0
-        super(VecFeatured, self).__init__(nentity=nentity, nrelation=nrelation, hidden_dim=hidden_dim,
-                                          gamma=gamma, optim_mode=optim_mode, batch_size=batch_size, test_batch_size=test_batch_size,
-                                          sparse_embeddings=sparse_embeddings, sparse_device=sparse_device, use_cuda=use_cuda,
-                                          query_name_dict=query_name_dict, model_config=model_config, logit_impl=logit_impl)
+        super(VecFeatured, self).__init__(
+            nentity=nentity,
+            nrelation=nrelation,
+            hidden_dim=hidden_dim,
+            gamma=gamma,
+            optim_mode=optim_mode,
+            batch_size=batch_size,
+            test_batch_size=test_batch_size,
+            sparse_embeddings=sparse_embeddings,
+            sparse_device=sparse_device,
+            use_cuda=use_cuda,
+            query_name_dict=query_name_dict,
+            model_config=model_config,
+            logit_impl=logit_impl,
+        )
         self.feature_mod = feature_mod
         self.has_feat = True
 
@@ -128,17 +172,17 @@ class VecFeatured(VecReasoning):
         relation_feat = self.relation_feat[relation_ids].unsqueeze(1)
         embedding = self.feature_mod.forward_relation(relation_embedding, relation_feat)
         return embedding
- 
+
     def retrieve_embedding(self, entity_ids):
-        '''
+        """
         Retrieve the entity embeddings given the entity indices
         Params:
             entity_ids: a list of entities indices
-        '''
+        """
         embedding = self.entity_embedding(entity_ids)
         feat = self.entity_feat.read(entity_ids)
         embedding = self.feature_mod.forward_entity(embedding, feat)
-        return [embedding.unsqueeze(1)] # [num_queries, 1, embedding_dim]
+        return [embedding.unsqueeze(1)]  # [num_queries, 1, embedding_dim]
 
     def relation_projection(self, cur_embedding, relation_ids):
         embedding = self.retrieve_relation_embedding(relation_ids)

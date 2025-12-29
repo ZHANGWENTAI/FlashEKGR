@@ -14,7 +14,6 @@
 
 import torch
 import extlib_cuda as extlib
-import torch.nn.functional as F
 from torch.nn.parameter import Parameter
 
 
@@ -27,7 +26,7 @@ class L1DistFunc(torch.autograd.Function):
         assert entity_embed.shape[-1] == center_embed.shape[-1]
         assert entity_embed.shape[0] % center_embed.shape[0] == 0 or center_embed.shape[0] % entity_embed.shape[0] == 0
         assert entity_embed.shape[1] % center_embed.shape[1] == 0 or center_embed.shape[1] % entity_embed.shape[1] == 0
-        
+
         out_rows = max(entity_embed.shape[0], center_embed.shape[0])
         out_cols = max(entity_embed.shape[1], center_embed.shape[1])
         with torch.no_grad():
@@ -72,17 +71,17 @@ def test_l1():
     center = Parameter(torch.randn(1, 20, 400).cuda())
 
     l2 = l1_dist(entity, center)
-    loss = torch.sum(l2 ** 2) * 3.14
+    loss = torch.sum(l2**2) * 3.14
     print(loss.item())
     loss.backward()
     e2 = entity.grad.clone()
     c2 = center.grad.clone()
 
-    print('\n========\n')
+    print("\n========\n")
     entity.grad = center.grad = None
 
     l1 = naive_l1(entity, center)
-    loss = torch.sum(l1 ** 2) * 3.14
+    loss = torch.sum(l1**2) * 3.14
     print(loss.item())
     loss.backward()
     e1 = entity.grad.clone()
@@ -92,9 +91,10 @@ def test_l1():
     print(torch.mean(torch.abs(c1 - c2)))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import numpy as np
     import random
+
     torch.manual_seed(1)
     np.random.seed(1)
     random.seed(1)

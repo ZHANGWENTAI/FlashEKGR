@@ -12,42 +12,41 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from setuptools import setup
-from distutils.command.build import build
-from setuptools.command.install import install
-
-from setuptools.command.develop import develop
-from torch.utils.cpp_extension import CppExtension, BuildExtension, CUDAExtension
-
 import os
 import subprocess
 import sys
+
+import torch
+from setuptools import setup
+from setuptools.command.develop import develop
+from torch.utils.cpp_extension import BuildExtension, CppExtension, CUDAExtension
+
 BASEPATH = os.path.dirname(os.path.abspath(__file__))
 
-extlib_path = 'smore/common/torchext'
+EXTLIB_PATH = 'smore/common/torchext'
 compile_args = [f'-I{os.path.join(BASEPATH, "third_party/ThreadPool")}', '-Wno-deprecated-declarations']
 link_args = []
 
-ext_modules = [CppExtension('extlib', 
-                            [os.path.join(extlib_path, 'extlib.cpp')],
+ext_modules = [CppExtension('extlib',
+                            [os.path.join(EXTLIB_PATH, 'extlib.cpp')],
                             extra_compile_args=compile_args,
                             extra_link_args=link_args)]
 
-# build cuda lib
-import torch
+# Build CUDA library if available
 if torch.cuda.is_available():
     ext_modules.append(CUDAExtension('extlib_cuda',
-                                    [os.path.join(extlib_path, 'extlib_cuda.cpp'),
-                                     os.path.join(extlib_path, 'ext_cuda_kernel.cu')],
+                                    [os.path.join(EXTLIB_PATH, 'extlib_cuda.cpp'),
+                                     os.path.join(EXTLIB_PATH, 'ext_cuda_kernel.cu')],
                                     extra_compile_args=compile_args))
 
-class custom_develop(develop):
+
+class CustomDevelop(develop):
     def run(self):
         original_cwd = os.getcwd()
 
-        # build custom ops
+        # Build custom ops
         folders = [
-           os.path.join(BASEPATH, 'smore/cpp_sampler'),
+            os.path.join(BASEPATH, 'smore/cpp_sampler'),
         ]
         for folder in folders:
             os.chdir(folder)
@@ -65,15 +64,15 @@ setup(name='smore',
       ],
       cmdclass={
           'build_ext': BuildExtension,
-          'develop': custom_develop,
-        },
-    options={
-        'build_ext': {
-            'build_lib': os.path.join(
-                os.environ.get('CONDA_PREFIX', sys.prefix), 
-                'lib', 
-                f'python{sys.version_info.major}.{sys.version_info.minor}'
-            )
-        },
-    }
+          'develop': CustomDevelop,
+      },
+      options={
+          'build_ext': {
+              'build_lib': os.path.join(
+                  os.environ.get('CONDA_PREFIX', sys.prefix),
+                  'lib',
+                  f'python{sys.version_info.major}.{sys.version_info.minor}'
+              )
+          },
+      }
 )

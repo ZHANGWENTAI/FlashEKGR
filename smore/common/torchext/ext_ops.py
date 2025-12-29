@@ -12,11 +12,3 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
-from smore.common.torchext.dist_func.rotate_dist import rotate_dist
-from smore.common.torchext.dist_func.box_dist import box_dist_in, box_dist_out
-from smore.common.torchext.dist_func.l1_dist import l1_dist
-from smore.common.torchext.dist_func.l2_dist import l2_dist
-from smore.common.torchext.dist_func.beta_dist import BetaDist, beta_kl
-from smore.common.torchext.dist_func.complex_dist import complex_sim
-from smore.common.torchext.dist_func.distmult_dist import distmult_sim

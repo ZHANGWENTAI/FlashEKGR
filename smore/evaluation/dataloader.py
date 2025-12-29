@@ -18,11 +18,8 @@ from __future__ import print_function
 
 
 from torch.utils.data import Dataset
-import numpy as np
 import torch
-from smore.common.util import list2tuple, tuple2list, flatten
-from collections import defaultdict
-from smore.common.util import fill_query, achieve_answer_with_constraints, list2tuple, tuple2list, flatten, flatten_list, sample_negative_bidirectional
+from smore.common.util import flatten
 
 
 class TestDataset(Dataset):
@@ -57,7 +54,7 @@ class MultihopTestDataset(TestDataset):
 
     def __len__(self):
         return len(self.data)
-    
+
     def __getitem__(self, idx):
         query = self.data[idx][1]
         query_structure = self.data[idx][0]
@@ -70,7 +67,7 @@ class MultihopTestDataset(TestDataset):
         return neg_samples, flatten(query), query, query_structure, easy_answers, hard_answers
 
     def subset(self, pos, num):
-        data = self.data[pos : pos + num]
+        data = self.data[pos: pos + num]
         return MultihopTestDataset(data, self.nentity, self.nrelation)
 
 
@@ -84,14 +81,14 @@ class Test1pBatchDataset(TestDataset):
         self.data = data
 
     def __len__(self):
-        return self.data['head'].shape[0]
+        return self.data["head"].shape[0]
 
     def __getitem__(self, idx):
-        head = self.data['head'][idx]
-        rel = self.data['relation'][idx]
-        tail = self.data['tail'][idx]
-        if 'tail_neg' in self.data:
-            neg_samples = torch.LongTensor([tail] + self.data['tail_neg'][idx].tolist())
+        head = self.data["head"][idx]
+        rel = self.data["relation"][idx]
+        tail = self.data["tail"][idx]
+        if "tail_neg" in self.data:
+            neg_samples = torch.LongTensor([tail] + self.data["tail_neg"][idx].tolist())
         else:
             neg_samples = None
         return neg_samples, head, rel, tail
@@ -100,7 +97,7 @@ class Test1pBatchDataset(TestDataset):
         d = {}
         for key in self.data:
             if len(self.data[key]):
-                d[key] = self.data[key][pos : pos + num]
+                d[key] = self.data[key][pos: pos + num]
             else:
                 d[key] = set()
         return Test1pBatchDataset(d, self.nentity, self.nrelation)
@@ -114,7 +111,7 @@ class Test1pBatchDataset(TestDataset):
             neg_samples = None
         list_head = torch.LongTensor(list_head)
         list_rel = torch.LongTensor(list_rel)
-        query_structure = ('e', ('r',))
+        query_structure = ("e", ("r",))
         query = torch.cat((list_head, list_rel), dim=-1)
         list_tail = torch.LongTensor(list_tail)
         return list_head, list_rel, list_tail, neg_samples
@@ -128,16 +125,16 @@ class Test1pDataset(TestDataset):
         """
         super(Test1pDataset, self).__init__(nentity, nrelation)
         self.data = data
-        self.test_all = len(data['tail_neg']) == 0
+        self.test_all = len(data["tail_neg"]) == 0
 
     def __len__(self):
-        return self.data['head'].shape[0]
+        return self.data["head"].shape[0]
 
-    def __getitem__(self, idx):        
-        query_structure = ('e', ('r',))
-        head = self.data['head'][idx]
-        rel = self.data['relation'][idx]
-        tail = self.data['tail'][idx]
+    def __getitem__(self, idx):
+        query_structure = ("e", ("r",))
+        head = self.data["head"][idx]
+        rel = self.data["relation"][idx]
+        tail = self.data["tail"][idx]
         query = (head, (rel,))
 
         easy_answers = set()
@@ -145,14 +142,14 @@ class Test1pDataset(TestDataset):
         if self.test_all:
             neg_samples = None
         else:
-            neg_samples = torch.LongTensor([tail] + self.data['tail_neg'][idx].tolist())
+            neg_samples = torch.LongTensor([tail] + self.data["tail_neg"][idx].tolist())
         return neg_samples, flatten(query), query, query_structure, easy_answers, set([tail])
 
     def subset(self, pos, num):
         d = {}
         for key in self.data:
             if len(self.data[key]):
-                d[key] = self.data[key][pos : pos + num]
+                d[key] = self.data[key][pos: pos + num]
             else:
                 d[key] = set()
         return Test1pDataset(d, self.nentity, self.nrelation)

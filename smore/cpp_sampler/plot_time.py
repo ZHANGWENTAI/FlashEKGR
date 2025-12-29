@@ -17,34 +17,34 @@ import os
 import matplotlib.pyplot as plt
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     db_name = sys.argv[1]
 
     perfs = {}
     n_config = 0
     t_list = [500, 5000, 50000]
-    methods = ['naive', 'sqrt']
+    methods = ["naive", "sqrt"]
     for method in methods:
         for t in t_list:
             l = []
-            fname = os.path.join(db_name, '%s-%d.txt' % (method, t))
+            fname = os.path.join(db_name, "%s-%d.txt" % (method, t))
             if not os.path.isfile(fname):
                 continue
-            with open(fname, 'r') as f:
+            with open(fname, "r") as f:
                 for row in f:
                     tt = float(row.strip().split()[-1])
                     l.append(tt)
             perfs[method + str(t)] = l
             n_config = len(l)
-    
+
     for i in range(n_config):
         for method in methods:
             y = []
             for t in t_list:
-                if not method + str(t) in perfs:
+                if method + str(t) not in perfs:
                     break
                 y.append(perfs[method + str(t)][i])
-            plt.plot(t_list[:len(y)], y)
+            plt.plot(t_list[: len(y)], y)
         plt.legend(methods)
-        plt.savefig('%s/t-%d.pdf' % (db_name, i))
+        plt.savefig("%s/t-%d.pdf" % (db_name, i))
         plt.close()

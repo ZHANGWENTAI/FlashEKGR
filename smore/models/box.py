@@ -16,13 +16,9 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import logging
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import time
-import pdb
 
 from smore.models.kg_reasoning import KGReasoning
 from smore.common.modules import Identity
@@ -31,17 +27,17 @@ from smore.common.torchext.ext_ops import box_dist_in, box_dist_out
 
 
 class BoxOffsetIntersection(nn.Module):
-    
+
     def __init__(self, dim):
         super(BoxOffsetIntersection, self).__init__()
         self.dim = dim
-        self.layers = nn.Parameter(torch.zeros(self.dim*2+2, self.dim))
-        nn.init.xavier_uniform_(self.layers[:self.dim*2, :])
+        self.layers = nn.Parameter(torch.zeros(self.dim * 2 + 2, self.dim))
+        nn.init.xavier_uniform_(self.layers[: self.dim * 2, :])
 
     def forward(self, embeddings):
         w1, w2, b1, b2 = torch.split(self.layers, [self.dim, self.dim, 1, 1], dim=0)
         layer1_act = F.relu(F.linear(embeddings, w1, b1.view(-1)))
-        layer1_mean = torch.mean(layer1_act, dim=0) 
+        layer1_mean = torch.mean(layer1_act, dim=0)
         gate = torch.sigmoid(F.linear(layer1_mean, w2, b2.view(-1)))
         offset, _ = torch.min(embeddings, dim=0)
 
@@ -53,35 +49,58 @@ class CenterIntersection(nn.Module):
     def __init__(self, dim):
         super(CenterIntersection, self).__init__()
         self.dim = dim
-        self.layers = nn.Parameter(torch.zeros(self.dim*2+2, self.dim))
-        nn.init.xavier_uniform_(self.layers[:self.dim*2, :])
+        self.layers = nn.Parameter(torch.zeros(self.dim * 2 + 2, self.dim))
+        nn.init.xavier_uniform_(self.layers[: self.dim * 2, :])
 
     def forward(self, embeddings):
         w1, w2, b1, b2 = torch.split(self.layers, [self.dim, self.dim, 1, 1], dim=0)
-        layer1_act = F.relu(F.linear(embeddings, w1, b1.view(-1))) # (num_conj, dim)
-        attention = F.softmax(F.linear(layer1_act, w2, b2.view(-1)), dim=0) # (num_conj, dim)
+        layer1_act = F.relu(F.linear(embeddings, w1, b1.view(-1)))  # (num_conj, dim)
+        attention = F.softmax(F.linear(layer1_act, w2, b2.view(-1)), dim=0)  # (num_conj, dim)
         embedding = torch.sum(attention * embeddings, dim=0)
 
         return embedding
 
 
 class BoxReasoning(KGReasoning):
-    def __init__(self, nentity, nrelation, hidden_dim, gamma, 
-                 optim_mode, batch_size, test_batch_size=1, sparse_embeddings=None,
-                 sparse_device='gpu', use_cuda=False, query_name_dict=None, box_mode=None,logit_impl='native'):
-        super(BoxReasoning, self).__init__(nentity=nentity, nrelation=nrelation, hidden_dim=hidden_dim, 
-                                           gamma=gamma, optim_mode=optim_mode, batch_size=batch_size, test_batch_size=test_batch_size,
-                                           sparse_embeddings=sparse_embeddings, sparse_device=sparse_device, use_cuda=use_cuda, query_name_dict=query_name_dict,
-                                           logit_impl=logit_impl)
-        self.geo = 'box'
+    def __init__(
+        self,
+        nentity,
+        nrelation,
+        hidden_dim,
+        gamma,
+        optim_mode,
+        batch_size,
+        test_batch_size=1,
+        sparse_embeddings=None,
+        sparse_device="gpu",
+        use_cuda=False,
+        query_name_dict=None,
+        box_mode=None,
+        logit_impl="native",
+    ):
+        super(BoxReasoning, self).__init__(
+            nentity=nentity,
+            nrelation=nrelation,
+            hidden_dim=hidden_dim,
+            gamma=gamma,
+            optim_mode=optim_mode,
+            batch_size=batch_size,
+            test_batch_size=test_batch_size,
+            sparse_embeddings=sparse_embeddings,
+            sparse_device=sparse_device,
+            use_cuda=use_cuda,
+            query_name_dict=query_name_dict,
+            logit_impl=logit_impl,
+        )
+        self.geo = "box"
         self.entity_embedding = SparseEmbedding(nentity, self.entity_dim)
         activation, cen = box_mode
-        self.cen = cen # hyperparameter that balances the in-box distance and the out-box distance
-        if activation == 'none':
+        self.cen = cen  # hyperparameter that balances the in-box distance and the out-box distance
+        if activation == "none":
             self.func = Identity
-        elif activation == 'relu':
+        elif activation == "relu":
             self.func = F.relu
-        elif activation == 'softplus':
+        elif activation == "softplus":
             self.func = F.softplus
 
         self.offset_embedding = SparseEmbedding(nrelation, self.entity_dim)
@@ -92,7 +111,7 @@ class BoxReasoning(KGReasoning):
 
     def named_sparse_embeddings(self):
         list_sparse = super(BoxReasoning, self).named_sparse_embeddings()
-        if 'r' in self.sparse_embeddings:
+        if "r" in self.sparse_embeddings:
             list_sparse.append(("offset_embedding", self.offset_embedding))
         return list_sparse
 
@@ -100,7 +119,7 @@ class BoxReasoning(KGReasoning):
         pgen = super(BoxReasoning, self).named_dense_embedding_params()
         for name, param in pgen:
             yield name, param
-        if 'r' not in self.sparse_embeddings:
+        if "r" not in self.sparse_embeddings:
             for name, param in self.offset_embedding.named_parameters():
                 yield name, param
 
@@ -110,7 +129,7 @@ class BoxReasoning(KGReasoning):
         self.offset_net = self.offset_net.to(device)
         self.zero_offset_tensor = torch.zeros([self.batch_size, 1, self.entity_dim]).to(device)
         self.empty_logit_tensor = torch.tensor([]).to(device)
-        if 'r' not in self.sparse_embeddings or self.sparse_device == 'gpu':
+        if "r" not in self.sparse_embeddings or self.sparse_device == "gpu":
             self.offset_embedding = self.offset_embedding.cuda(device)
 
     def init_params(self):
@@ -129,18 +148,18 @@ class BoxReasoning(KGReasoning):
         return [cur_embedding[0] + relation_embedding, cur_embedding[1] + self.func(offset_embedding)]
 
     def retrieve_embedding(self, entity_ids):
-        '''
+        """
         Retrieve the entity embeddings given the entity indices
         Params:
             entity_ids: a list of entities indices
-        '''
+        """
         embedding = self.entity_embedding(entity_ids)
         offset_embedding = torch.zeros_like(embedding).to(embedding.device)
         return [embedding.unsqueeze(1), offset_embedding.unsqueeze(1)]
-    
+
     def intersection_between_stacked_embedding(self, stacked_embedding_list):
         embedding, offset_embedding = torch.chunk(stacked_embedding_list, 2, dim=-1)
-        embedding = self.center_net(embedding) # [32, 6, 16]
+        embedding = self.center_net(embedding)  # [32, 6, 16]
         offset_embedding = self.offset_net(offset_embedding)
         return [embedding, offset_embedding]
 

@@ -12,58 +12,64 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .box import BoxReasoning
-from .vec import VecReasoning
+from smore.common.util import eval_tuple
+from smore.models import model_list
+
 from .beta import BetaReasoning
-from .rotate import RotateReasoning
+from .box import BoxReasoning
 from .complex import ComplexReasoning
 from .distmult import DistmultReasoning
-from smore.models import model_list
-from smore.common.util import eval_tuple
+from .rotate import RotateReasoning
+from .vec import VecReasoning
 
 
 def build_model(args, nentity, nrelation, query_name_dict):
-    tasks = args.tasks.split('.')
-    has_neg = any('n' in task for task in tasks)
+    tasks = args.tasks.split(".")
+    has_neg = any("n" in task for task in tasks)
 
     # Validate union evaluation mode
-    if args.evaluate_union == 'DM':
-        assert args.geo == 'beta', "De Morgan's laws evaluation only supported for BetaE"
+    if args.evaluate_union == "DM":
+        assert args.geo == "beta", "De Morgan's laws evaluation only supported for BetaE"
 
     # Common parameters for all models
     common_params = {
-        'nentity': nentity,
-        'nrelation': nrelation,
-        'hidden_dim': args.hidden_dim,
-        'gamma': args.gamma,
-        'use_cuda': args.cuda,
-        'batch_size': args.batch_size,
-        'test_batch_size': args.test_batch_size,
-        'sparse_embeddings': args.sparse_embeddings,
-        'sparse_device': args.sparse_device,
-        'query_name_dict': query_name_dict,
-        'optim_mode': args.optim_mode,
-        'logit_impl': args.logit_impl,
+        "nentity": nentity,
+        "nrelation": nrelation,
+        "hidden_dim": args.hidden_dim,
+        "gamma": args.gamma,
+        "use_cuda": args.cuda,
+        "batch_size": args.batch_size,
+        "test_batch_size": args.test_batch_size,
+        "sparse_embeddings": args.sparse_embeddings,
+        "sparse_device": args.sparse_device,
+        "query_name_dict": query_name_dict,
+        "optim_mode": args.optim_mode,
+        "logit_impl": args.logit_impl,
     }
 
     # Model class and mode configuration mapping
     model_config_map = {
-        'box': (BoxReasoning, 'box_mode', args.box_mode, "Q2B cannot handle queries with negation"),
-        'rotate': (RotateReasoning, 'rotate_mode', args.rotate_mode, "Rotate cannot handle queries with negation"),
-        'complex': (ComplexReasoning, 'complex_mode', args.complex_mode, "Complex cannot handle queries with negation"),
-        'distmult': (DistmultReasoning, 'distmult_mode', args.distmult_mode, "DistMult cannot handle queries with negation"),
-        'beta': (BetaReasoning, 'beta_mode', args.beta_mode, None),  # Beta supports negation
-        'vec': (VecReasoning, 'model_config', args.vec_mode, "GQE cannot handle queries with negation"),
+        "box": (BoxReasoning, "box_mode", args.box_mode, "Q2B cannot handle queries with negation"),
+        "rotate": (RotateReasoning, "rotate_mode", args.rotate_mode, "Rotate cannot handle queries with negation"),
+        "complex": (ComplexReasoning, "complex_mode", args.complex_mode, "Complex cannot handle queries with negation"),
+        "distmult": (
+            DistmultReasoning,
+            "distmult_mode",
+            args.distmult_mode,
+            "DistMult cannot handle queries with negation",
+        ),
+        "beta": (BetaReasoning, "beta_mode", args.beta_mode, None),
+        "vec": (VecReasoning, "model_config", args.vec_mode, "GQE cannot handle queries with negation"),
     }
 
     # Get model configuration
     if args.geo in model_config_map:
         model_class, mode_key, mode_value, neg_error_msg = model_config_map[args.geo]
-        
+
         # Check negation support
         if neg_error_msg and has_neg:
             raise AssertionError(neg_error_msg)
-        
+
         # Build model-specific parameters
         model_params = common_params.copy()
         model_params[mode_key] = eval_tuple(mode_value)
@@ -72,7 +78,7 @@ def build_model(args, nentity, nrelation, query_name_dict):
         # Fallback to model_list for custom models
         mod_class = getattr(model_list, args.geo)
         model_params = common_params.copy()
-        model_params['model_config'] = eval_tuple(args.model_config)
+        model_params["model_config"] = eval_tuple(args.model_config)
         model = mod_class(**model_params)
-    
+
     return model

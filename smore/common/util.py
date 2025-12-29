@@ -12,38 +12,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import numpy as np
-import random
-import torch
-import time
-import os.path as osp
-from collections import defaultdict
-from functools import wraps
-import torch.multiprocessing as mp
-from torch.multiprocessing import Queue
-from _thread import start_new_thread
-import traceback
 import logging
 import os
-from tqdm import tqdm
-import shutil
+import os.path as osp
+import queue
+import random
+import time
+import traceback
 import zipfile
-import urllib.request as ur
-from smore.common.config import name_query_dict, query_name_dict
+from collections import defaultdict
+from functools import wraps
+from _thread import start_new_thread
+from urllib import request as ur
+
+import numpy as np
+import torch
+from tqdm import tqdm
 
 GBFACTOR = float(1 << 30)
 
+
 def cal_ent_loc(query_structure, idx):
-    if query_structure[0] == '<':
+    if query_structure[0] == "<":
         return cal_ent_loc(query_structure[1], idx)
     all_relation_flag = True
     ent_locations = []
     for ele in query_structure[-1]:
-        if ele not in ['r', 'n']:
+        if ele not in ["r", "n"]:
             all_relation_flag = False
             break
     if all_relation_flag:
-        if query_structure[0] == 'e':
+        if query_structure[0] == "e":
             ent_locations.append(idx)
             idx += 1
         else:
@@ -52,12 +51,13 @@ def cal_ent_loc(query_structure, idx):
             idx += 1
     else:
         for i in range(len(query_structure)):
-            if query_structure[i] == 'u':
+            if query_structure[i] == "u":
                 assert i == len(query_structure) - 1
                 break
             tmp_ent_locations, idx = cal_ent_loc(query_structure[i], idx)
             ent_locations.extend(tmp_ent_locations)
     return ent_locations, idx
+
 
 def cal_ent_loc_dict(query_name_dict):
     query_ent_loc_dict = {}
@@ -70,15 +70,23 @@ def cal_ent_loc_dict(query_name_dict):
         #     tmp_structure = query_structure
         query_ent_loc_dict[query_structure] = cal_ent_loc(query_structure, 0)[0]
     return query_ent_loc_dict
-       
+
+
 def list2tuple(l):
-    return tuple(list2tuple(x) if type(x)==list else x for x in l)
+    return tuple(list2tuple(x) if isinstance(x, list) else x for x in l)
+
 
 def tuple2list(t):
-    return list(tuple2list(x) if type(x)==tuple else x for x in t)
+    return list(tuple2list(x) if isinstance(x, tuple) else x for x in t)
 
-flatten=lambda l: sum(map(flatten, l),[]) if isinstance(l,tuple) else [l]
-flatten_list=lambda l: sum(map(flatten_list, l),[]) if isinstance(l,list) else [l]
+
+def flatten(l):
+    return sum(map(flatten, l), []) if isinstance(l, tuple) else [l]
+
+
+def flatten_list(l):
+    return sum(map(flatten_list, l), []) if isinstance(l, list) else [l]
+
 
 def parse_time():
     return time.strftime("%Y.%m.%d-%H:%M:%S", time.localtime())
@@ -89,11 +97,12 @@ def set_global_seed(seed):
     torch.cuda.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
-    torch.backends.cudnn.deterministic=True
+    torch.backends.cudnn.deterministic = True
+
 
 def eval_tuple(arg_return):
     """Evaluate a tuple string into a tuple."""
-    if type(arg_return) == tuple:
+    if isinstance(arg_return, tuple):
         return arg_return
     if arg_return[0] not in ["(", "["]:
         arg_return = eval(arg_return)
@@ -103,13 +112,14 @@ def eval_tuple(arg_return):
         for item in splitted:
             try:
                 item = eval(item)
-            except:
+            except BaseException:
                 pass
             if item == "":
                 continue
             List.append(item)
         arg_return = tuple(List)
     return arg_return
+
 
 def flatten_query(queries):
     all_queries = []
@@ -118,16 +128,17 @@ def flatten_query(queries):
         all_queries.extend([(query, query_structure) for query in tmp_queries])
     return all_queries
 
+
 def construct_graph(base_path, indexified_files):
-    #knowledge graph
-    #kb[e][rel] = set([e, e, e])
+    # knowledge graph
+    # kb[e][rel] = set([e, e, e])
     ent_in, ent_out = defaultdict(lambda: defaultdict(set)), defaultdict(lambda: defaultdict(set))
     for indexified_p in indexified_files:
         with open(osp.join(base_path, indexified_p)) as f:
             for i, line in enumerate(f):
                 if len(line) == 0:
                     continue
-                e1, rel, e2 = line.split('\t')
+                e1, rel, e2 = line.split("\t")
                 e1 = int(e1.strip())
                 e2 = int(e2.strip())
                 rel = int(rel.strip())
@@ -136,24 +147,26 @@ def construct_graph(base_path, indexified_files):
 
     return ent_in, ent_out
 
+
 def tuple2filterlist(t):
-    return list(tuple2filterlist(x) if type(x)==tuple else -1 if x == 'u' else -2 if x == 'n' else x for x in t)
+    return list(tuple2filterlist(x) if isinstance(x, tuple) else -1 if x == "u" else -2 if x == "n" else x for x in t)
+
 
 def achieve_answer_with_constraints(query, ent_in, ent_out, max_to_keep):
-    assert type(query[-1]) == list
+    assert isinstance(query[-1], list)
     all_relation_flag = True
     for ele in query[-1]:
-        if (type(ele) != int) or (ele == -1):
+        if (not isinstance(ele, int)) or (ele == -1):
             all_relation_flag = False
             break
     if all_relation_flag:
-        if type(query[0]) == int:
+        if isinstance(query[0], int):
             ent_set = set([query[0]])
         else:
             ent_set = achieve_answer_with_constraints(query[0], ent_in, ent_out, max_to_keep)
         for i in range(len(query[-1])):
             if query[-1][i] == -2:
-                assert False, 'negation not supported'
+                assert False, "negation not supported"
                 ent_set = set(range(len(ent_in))) - ent_set
             else:
                 ent_set_traverse = set()
@@ -165,11 +178,11 @@ def achieve_answer_with_constraints(query, ent_in, ent_out, max_to_keep):
                         ent_set_traverse = ent_set_traverse.union(ent_out[ent][query[-1][i]])
                         n_traversed += 1
                 ent_set = ent_set_traverse
-    else:   
+    else:
         ent_set = achieve_answer_with_constraints(query[0], ent_in, ent_out, max_to_keep)
         union_flag = False
         if len(query[-1]) == 1 and query[-1][0] == -1:
-            assert False, 'union not supported'
+            assert False, "union not supported"
             union_flag = True
         for i in range(1, len(query)):
             if not union_flag:
@@ -180,17 +193,18 @@ def achieve_answer_with_constraints(query, ent_in, ent_out, max_to_keep):
                 ent_set = ent_set.union(achieve_answer_with_constraints(query[i], ent_in, ent_out, max_to_keep))
     return ent_set
 
+
 def fill_query(query_structure, ent_in, ent_out, answer, chill=False):
-    assert type(query_structure[-1]) == list
+    assert isinstance(query_structure[-1], list)
     all_relation_flag = True
     for ele in query_structure[-1]:
-        if ele not in ['r', 'n']:
+        if ele not in ["r", "n"]:
             all_relation_flag = False
             break
     if all_relation_flag:
         r = -1
         for i in range(len(query_structure[-1]))[::-1]:
-            if query_structure[-1][i] == 'n':
+            if query_structure[-1][i] == "n":
                 query_structure[-1][i] = -2
                 continue
             if chill:
@@ -209,8 +223,10 @@ def fill_query(query_structure, ent_in, ent_out, answer, chill=False):
             answer = random.sample(ent_in[answer][r], 1)[0]
             # elif query_structure[-1][i] == 'n':
             #     assert False
-            #     answer = random.sample(set(range(len(ent_in))) - answer, 1)[0] #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!make sure this negative entity is of same type with the current asnwer.
-        if query_structure[0] == 'e':
+            # answer = random.sample(set(range(len(ent_in))) - answer, 1)[0]
+            # #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!make sure this negative entity is of
+            # same type with the current asnwer.
+        if query_structure[0] == "e":
             query_structure[0] = answer
         else:
             return fill_query(query_structure[0], ent_in, ent_out, answer, chill)
@@ -219,7 +235,7 @@ def fill_query(query_structure, ent_in, ent_out, answer, chill=False):
         for i in range(len(query_structure)):
             same_structure[list2tuple(query_structure[i])].append(i)
         for i in range(len(query_structure)):
-            if len(query_structure[i]) == 1 and query_structure[i][0] == 'u':
+            if len(query_structure[i]) == 1 and query_structure[i][0] == "u":
                 assert i == len(query_structure) - 1
                 query_structure[i][0] = -1
                 continue
@@ -237,8 +253,10 @@ def fill_query(query_structure, ent_in, ent_out, answer, chill=False):
                         return True
         return False
 
-def sample_negative_bidirectional(query, ent_in, ent_out, nent):
-    pass
+
+def sample_negative_bidirectional(query, ent_in, ent_out, nent):  # pylint: disable=unused-argument
+    """Sample negative examples bidirectionally (placeholder)."""
+    # Placeholder function - implementation needed
 
 
 def download_url(url, folder, log=True):
@@ -250,52 +268,55 @@ def download_url(url, folder, log=True):
             console. (default: :obj:`True`)
     """
 
-    filename = url.rpartition('/')[2]
+    filename = url.rpartition("/")[2]
     path = osp.join(folder, filename)
 
     if osp.exists(path) and osp.getsize(path) > 0:  # pragma: no cover
         if log:
-            print('Using exist file', filename)
+            print("Using exist file", filename)
         return path
 
     if log:
-        print('Downloading', url)
+        print("Downloading", url)
 
     if not osp.exists(folder):
         os.makedirs(folder)
-    data = ur.urlopen(url)
 
-    size = int(data.info()["Content-Length"])
-
-    chunk_size = 1024*1024
-    num_iter = int(size/chunk_size) + 2
-
+    chunk_size = 1024 * 1024
     downloaded_size = 0
 
     try:
-        with open(path, 'wb') as f:
-            pbar = tqdm(range(num_iter))
-            for i in pbar:
-                chunk = data.read(chunk_size)
-                downloaded_size += len(chunk)
-                pbar.set_description("Downloaded {:.2f} GB".format(float(downloaded_size)/GBFACTOR))
-                f.write(chunk)
-    except:
-        if osp.exists(path):
-             os.remove(path)
-        raise RuntimeError('Stopped downloading due to interruption.')
+        with ur.urlopen(url) as data:
+            size = int(data.info()["Content-Length"])
+            num_iter = int(size / chunk_size) + 2
 
+            with open(path, "wb") as f:
+                pbar = tqdm(range(num_iter))
+                for _ in pbar:
+                    chunk = data.read(chunk_size)
+                    downloaded_size += len(chunk)
+                    pbar.set_description(f"Downloaded {float(downloaded_size)/GBFACTOR:.2f} GB")
+                    f.write(chunk)
+    except Exception as exc:
+        if osp.exists(path):
+            os.remove(path)
+        raise RuntimeError("Stopped downloading due to interruption.") from exc
 
     return path
 
+
 def maybe_download_dataset(data_path):
-    data_name = data_path.split('/')[-1]
-    if data_name in ['FB15k', 'FB15k-237', 'NELL', "FB400k"]:
-        if not (osp.exists(data_path) and osp.exists(osp.join(data_path, "stats.txt"))):
-            url = "https://snap.stanford.edu/betae/%s.zip" % data_name
-            path = download_url(url, osp.split(osp.abspath(data_path))[0])
-            extract_zip(path, osp.split(osp.abspath(data_path))[0])
+    """Download dataset if it doesn't exist."""
+    data_name = data_path.split("/")[-1]
+    if data_name in ["FB15k", "FB15k-237", "NELL", "FB400k"]:
+        stats_path = osp.join(data_path, "stats.txt")
+        if not (osp.exists(data_path) and osp.exists(stats_path)):
+            url = f"https://snap.stanford.edu/betae/{data_name}.zip"
+            base_dir = osp.split(osp.abspath(data_path))[0]
+            path = download_url(url, base_dir)
+            extract_zip(path, base_dir)
             os.unlink(path)
+
 
 def extract_zip(path, folder):
     r"""Extracts a zip archive to a specific folder.
@@ -303,8 +324,8 @@ def extract_zip(path, folder):
         path (string): The path to the tar archive.
         folder (string): The folder.
     """
-    print('Extracting', path)
-    with zipfile.ZipFile(path, 'r') as f:
+    print("Extracting", path)
+    with zipfile.ZipFile(path, "r") as f:
         f.extractall(folder)
 
 
@@ -318,31 +339,31 @@ def thread_wrapped_func(func):
     @thread_wrapped_func
     def func_to_wrap(args ...):
     """
+
     @wraps(func)
     def decorated_function(*args, **kwargs):
-        queue = Queue()
+        result_queue = queue.Queue()
+
         def _queue_result():
             exception, trace, res = None, None, None
             try:
                 res = func(*args, **kwargs)
-            except Exception as e:
-                exception = e
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                exception = exc
                 trace = traceback.format_exc()
-            queue.put((res, exception, trace))
+            result_queue.put((res, exception, trace))
 
         start_new_thread(_queue_result, ())
-        result, exception, trace = queue.get()
+        result, exception, trace = result_queue.get()
         if exception is None:
             return result
-        else:
-            assert isinstance(exception, Exception)
-            raise exception.__class__(trace)
+        assert isinstance(exception, Exception)
+        raise exception.__class__(trace)
+
     return decorated_function
 
-def log_metrics(mode, step, metrics):
-    '''
-    Print the evaluation logs
-    '''
-    for metric in metrics:
-        logging.info('%s %s at step %d: %f' % (mode, metric, step, metrics[metric]))
 
+def log_metrics(mode, step, metrics):
+    """Print the evaluation logs."""
+    for metric, value in metrics.items():
+        logging.info("%s %s at step %d: %f", mode, metric, step, value)

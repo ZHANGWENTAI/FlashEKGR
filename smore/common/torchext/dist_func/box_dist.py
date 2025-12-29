@@ -42,8 +42,10 @@ class BoxDistFunc(torch.autograd.Function):
             grad_entity = grad_out.new(entity_embed.shape).zero_()
             grad_center = grad_out.new(center_embed.shape).zero_()
             grad_offset = grad_out.new(offset_embed.shape).zero_()
-        
-            extlib.box_dist_backward(grad_out, entity_embed, center_embed, offset_embed, grad_entity, grad_center, grad_offset, ctx.dist_type)
+
+            extlib.box_dist_backward(
+                grad_out, entity_embed, center_embed, offset_embed, grad_entity, grad_center, grad_offset, ctx.dist_type
+            )
             return grad_entity, grad_center, grad_offset, None
 
 
@@ -63,17 +65,21 @@ def box_dist(entity_embed, center_embed, offset_embed, dist_type):
         assert entity_embed.dim() == 3 and center_embed.dim() == 3 and offset_embed.dim() == 3
         return BoxDistFunc.apply(entity_embed, center_embed, offset_embed, dist_type)
 
+
 def box_dist_out(entity_embed, center_embed, offset_embed):
-    return box_dist(entity_embed, center_embed, offset_embed, 'out')
+    return box_dist(entity_embed, center_embed, offset_embed, "out")
+
 
 def box_dist_in(entity_embed, center_embed, offset_embed):
-    return box_dist(entity_embed, center_embed, offset_embed, 'in')
+    return box_dist(entity_embed, center_embed, offset_embed, "in")
+
 
 def box_fast_logit(entity_embed, center_embed, offset_embed):
     d1 = box_dist_out(entity_embed, center_embed, offset_embed)
     d2 = box_dist_in(entity_embed, center_embed, offset_embed)
     logit = 24 - d1 - 1 * d2
     return logit
+
 
 def naive_box_dist_out(entity_embedding, query_center_embedding, query_offset_embedding):
     delta = (entity_embedding - query_center_embedding).abs()
@@ -93,7 +99,7 @@ def naive_logit(entity_embedding, query_center_embedding, query_offset_embedding
     delta = (entity_embedding - query_center_embedding).abs()
     distance_out = F.relu(delta - query_offset_embedding)
     distance_in = torch.min(delta, query_offset_embedding)
-    logit = 24  - torch.norm(distance_out, p=1, dim=-1) - 1 * torch.norm(distance_in, p=1, dim=-1)
+    logit = 24 - torch.norm(distance_out, p=1, dim=-1) - 1 * torch.norm(distance_in, p=1, dim=-1)
     return logit
 
 
@@ -103,7 +109,7 @@ def test_box():
     offset = Parameter(torch.randn(1, 20, 400).cuda())
 
     l2 = box_fast_logit(entity, center, offset)
-    loss = torch.sum(l2 ** 2) * 3.14
+    loss = torch.sum(l2**2) * 3.14
     print(loss.item())
     loss.backward()
     e2 = entity.grad.clone()
@@ -112,7 +118,7 @@ def test_box():
     entity.grad = center.grad = offset.grad = None
 
     l1 = naive_logit(entity, center, offset)
-    loss = torch.sum(l1 ** 2) * 3.14
+    loss = torch.sum(l1**2) * 3.14
     print(loss.item())
     loss.backward()
     e1 = entity.grad.clone()
@@ -123,11 +129,11 @@ def test_box():
     print(torch.mean(torch.abs(o1 - o2)))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import numpy as np
     import random
+
     torch.manual_seed(1)
     np.random.seed(1)
     random.seed(1)
     test_box()
-

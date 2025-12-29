@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import libsampler
 import os
 import sys
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
-sys.path.insert(0, os.path.join(dir_path, 'build/dll'))
-
-import libsampler
+sys.path.insert(0, os.path.join(dir_path, "build/dll"))

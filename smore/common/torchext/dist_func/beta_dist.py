@@ -14,11 +14,12 @@
 
 import torch
 import extlib_cuda as extlib
-import torch.nn.functional as F
 from torch.nn.parameter import Parameter
 
 from collections import namedtuple
-BetaDist = namedtuple('BetaDist', ['concentration1', 'concentration0'])
+
+BetaDist = namedtuple("BetaDist", ["concentration1", "concentration0"])
+
 
 class BetaDistFunc(torch.autograd.Function):
 
@@ -47,7 +48,9 @@ class BetaDistFunc(torch.autograd.Function):
             grad_entity = grad_out.new(entity_embed.shape).zero_()
             grad_re = grad_out.new(re_embed.shape).zero_()
             grad_im = grad_out.new(im_embed.shape).zero_()
-            extlib.beta_dist_backward(grad_out, entity_embed, re_embed, im_embed, grad_entity, grad_re, grad_im, ctx.dist_name)
+            extlib.beta_dist_backward(
+                grad_out, entity_embed, re_embed, im_embed, grad_entity, grad_re, grad_im, ctx.dist_name
+            )
             return grad_entity, grad_re, grad_im, None
 
 
@@ -76,8 +79,10 @@ def beta_kl(entity_embed, query_dist):
 def beta_l2(entity_embed, query_dist):
     return beta_dist(entity_embed, query_dist, "l2")
 
+
 def beta_fisher_approx(entity_embed, query_dist):
     return beta_dist(entity_embed, query_dist, "fisher_approx")
+
 
 def naive_beta_kl(entity_embedding, query_dist):
     alpha_embedding, beta_embedding = torch.chunk(entity_embedding, 2, dim=-1)
@@ -93,52 +98,55 @@ def naive_beta_l2(entity_embedding, query_dist):
     d = torch.sum(d1 + d2, dim=-1) * 0.5
     return d
 
+
 def naive_beta_fisher_approx(entity_embedding, query_dist):
     alpha_embedding, beta_embedding = torch.chunk(entity_embedding, 2, dim=-1)
-    d1 = (alpha_embedding - query_dist.concentration1)
-    d2 = (beta_embedding - query_dist.concentration0)
+    d1 = alpha_embedding - query_dist.concentration1
+    d2 = beta_embedding - query_dist.concentration0
     with torch.no_grad():
         tri_alpha = alpha_embedding.polygamma(1)
         tri_beta = beta_embedding.polygamma(1)
         tri_sum = -(alpha_embedding + beta_embedding).polygamma(1)
-    t1 = (tri_alpha + tri_sum) * (d1 ** 2)
+    t1 = (tri_alpha + tri_sum) * (d1**2)
     t2 = 2 * tri_sum * d1 * d2
-    t3 = (tri_beta + tri_sum) * (d2 ** 2)
+    t3 = (tri_beta + tri_sum) * (d2**2)
     return 0.5 * torch.sum(t1 + t2 + t3, dim=-1)
+
 
 def test_beta(dist_name):
     from smore.common.modules import Regularizer
+
     reg = Regularizer(1, 0.05, 1e9)
     entity = Parameter(reg(torch.randn(30, 1, 400)).data.cuda())
     re = Parameter(reg(torch.randn(1, 20, 200)).data.cuda())
     im = Parameter(reg(torch.randn(1, 20, 200)).data.cuda())
     query_dist = BetaDist(re, im)
 
-    if dist_name == 'kl':
+    if dist_name == "kl":
         fast_d = beta_kl
         slow_d = naive_beta_kl
-    elif dist_name == 'l2':
+    elif dist_name == "l2":
         fast_d = beta_l2
         slow_d = naive_beta_l2
-    elif dist_name == 'fisher_approx':
+    elif dist_name == "fisher_approx":
         fast_d = beta_fisher_approx
-        slow_d = naive_beta_fisher_approx        
+        slow_d = naive_beta_fisher_approx
     else:
         raise NotImplementedError
 
     l2 = fast_d(entity, query_dist)
-    loss = torch.sum(l2 ** 2) * 3.14
+    loss = torch.sum(l2**2) * 3.14
     print(loss.item())
     loss.backward()
     e2 = entity.grad.clone()
     r2 = re.grad.clone()
     i2 = im.grad.clone()
 
-    print('\n========\n')
+    print("\n========\n")
     entity.grad = re.grad = im.grad = None
 
     l1 = slow_d(entity, query_dist)
-    loss = torch.sum(l1 ** 2) * 3.14
+    loss = torch.sum(l1**2) * 3.14
     print(loss.item())
     loss.backward()
     e1 = entity.grad.clone()
@@ -150,10 +158,11 @@ def test_beta(dist_name):
     print(torch.mean(torch.abs(i1 - i2)))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import numpy as np
     import random
+
     torch.manual_seed(1)
     np.random.seed(1)
     random.seed(1)
-    test_beta('fisher_approx')
+    test_beta("fisher_approx")

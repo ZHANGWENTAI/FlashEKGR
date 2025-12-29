@@ -16,17 +16,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import logging
-import itertools
-import warnings
-import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-from typing import NamedTuple
 
 
-class Regularizer():
+class Regularizer:
     def __init__(self, base_add, min_val, max_val):
         self.base_add = base_add
         self.min_val = min_val
@@ -35,15 +29,19 @@ class Regularizer():
     def __call__(self, entity_embedding):
         return torch.clamp(entity_embedding + self.base_add, self.min_val, self.max_val)
 
-class Normalizer():
+
+class Normalizer:
     def __call__(self, embedding):
         return F.normalize(embedding, p=2, dim=-1)
 
-class Normalizer_with_const():
+
+class Normalizer_with_const:
     def __init__(self, const):
         self.const = const
+
     def __call__(self, embedding):
         return F.normalize(embedding, p=2, dim=-1) * self.const
+
 
 def Identity(x):
     return x

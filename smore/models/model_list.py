@@ -12,9 +12,3 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .box import BoxReasoning
-from .vec import VecReasoning, VecFeatured
-from .beta import BetaReasoning
-from .rotate import RotateReasoning
-from .complex import ComplexReasoning, ComplexFeatured
-from .distmult import DistmultReasoning
