@@ -17,6 +17,7 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
+from typing import List, Union
 import torch
 import torch.nn as nn
 
@@ -24,6 +25,7 @@ from smore.common.embedding.sparse_embed import SparseEmbedding
 from smore.common.embedding.embed_rw import EmbeddingReadOnly
 from smore.common.util import cal_ent_loc_dict
 
+from smore.models.query_parser import OpType
 
 class KGReasoning(nn.Module):
     def __init__(
@@ -41,6 +43,7 @@ class KGReasoning(nn.Module):
         query_name_dict=None,
         relation_dim=None,
         logit_impl="native",
+        plan=None,
     ):
         super(KGReasoning, self).__init__()
         self.nentity = nentity
@@ -93,6 +96,7 @@ class KGReasoning(nn.Module):
             self._cal_logit = self.custom_cal_logit
         else:
             raise ValueError("unknown logit impl %s" % logit_impl)
+        self.plan = plan
 
     def cal_logit(self, entity_embedding, entity_feat, query_embedding):
         return self._cal_logit(entity_embedding, entity_feat, query_embedding)
@@ -280,6 +284,60 @@ class KGReasoning(nn.Module):
                 embedding = self.intersection(embedding_list)
 
         return embedding, idx
+    
+    def lop_embed_query(self, queries: torch.Tensor, query_name: str) -> Union[torch.Tensor, List[torch.Tensor]]:
+        """
+        Execute the query plan.
+
+        Args:
+            queries: Query matrix [batch_size, query_length]
+            device: Device to execute on
+
+        Returns:
+            Embedding result (same format as embed_query's embedding output)
+        """
+        cached_embeddings: List = []
+
+        for node in self.plan[query_name]:
+            if node.op_type == OpType.LOAD_EMBED:
+                embedding = self.retrieve_embedding(queries[:, node.entity_idx])
+                cached_embeddings.append(embedding)
+
+            elif node.op_type == OpType.RELATION_PROJ:
+                embedding = cached_embeddings[node.cache_idx]
+                new_embedding = self.relation_projection(embedding, queries[:, node.relation_indices])
+                cached_embeddings[node.cache_idx] = new_embedding
+
+            elif node.op_type == OpType.NEGATION:
+                embedding = cached_embeddings[node.cache_idx]
+                new_embedding = self.negation(embedding)
+                cached_embeddings[node.cache_idx] = new_embedding
+
+            elif node.op_type == OpType.INTERSECTION:
+                cached_embeddings = self.intersection(cached_embeddings)
+
+            elif node.op_type == OpType.UNION:
+                cached_embeddings = self.union(cached_embeddings)
+
+            elif node.op_type == OpType.SPLIT:
+                cached_embeddings = self.split(cached_embeddings, node.num_branches)
+
+            elif node.op_type == OpType.MERGE:
+                cached_embeddings = self.merge(cached_embeddings)
+
+            else:
+                raise ValueError(f"Unknown operation type: {node.op_type}")
+
+        # Return the last result (should be the final embedding)
+        assert len(cached_embeddings) == 1, "Expected 1 cached embedding, got %d" % len(cached_embeddings)
+        return cached_embeddings[0]
+    
+    def split(self, embedding_list, num_branches):
+        assert len(embedding_list) == 1, "Expected 1 embedding, got %d" % len(embedding_list)
+        return torch.split(embedding_list[0], num_branches, dim=0)
+
+    def merge(self, embedding_list):
+        return [torch.cat(embedding_list, dim=0)]
 
     def embed_reverse_query(self, entity_idx, inv_rel_queries):
         tail_entities = self.entity_embedding(entity_idx)

@@ -85,6 +85,7 @@ class ComplexReasoning(KGReasoning):
         query_name_dict=None,
         complex_mode=None,
         logit_impl="native",
+        plan=None,
     ):
         super(ComplexReasoning, self).__init__(
             nentity=nentity,
@@ -100,6 +101,7 @@ class ComplexReasoning(KGReasoning):
             query_name_dict=query_name_dict,
             relation_dim=hidden_dim * 2,
             logit_impl=logit_impl,
+            plan=plan,
         )
         self.geo = "complex"
         self.entity_dim = hidden_dim * 2

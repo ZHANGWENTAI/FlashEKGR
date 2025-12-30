@@ -41,6 +41,7 @@ class VecReasoning(KGReasoning):
         query_name_dict=None,
         model_config=None,
         logit_impl="native",
+        plan=None,
     ):
         super(VecReasoning, self).__init__(
             nentity=nentity,
@@ -55,6 +56,7 @@ class VecReasoning(KGReasoning):
             use_cuda=use_cuda,
             query_name_dict=query_name_dict,
             logit_impl=logit_impl,
+            plan=plan,
         )
         self.geo = "vec"
         self.entity_embedding = SparseEmbedding(nentity, self.entity_dim)

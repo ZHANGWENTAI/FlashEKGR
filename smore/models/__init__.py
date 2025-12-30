@@ -13,7 +13,10 @@
 # limitations under the License.
 
 from smore.common.util import eval_tuple
+from smore.common.config import name_query_dict
+from smore.cpp_sampler.online_sampler import query_structures
 from smore.models import model_list
+from smore.models.query_parser import QueryParser
 
 from .beta import BetaReasoning
 from .box import BoxReasoning
@@ -30,6 +33,14 @@ def build_model(args, nentity, nrelation, query_name_dict):
     # Validate union evaluation mode
     if args.evaluate_union == "DM":
         assert args.geo == "beta", "De Morgan's laws evaluation only supported for BetaE"
+    
+    if args.plan_mode == "lop":
+        plan = {}
+        for task in tasks:
+            query_structures = name_query_dict[task]
+            plan[task] = QueryParser().parse(query_structures)
+    else: 
+        plan = None
 
     # Common parameters for all models
     common_params = {
@@ -45,6 +56,7 @@ def build_model(args, nentity, nrelation, query_name_dict):
         "query_name_dict": query_name_dict,
         "optim_mode": args.optim_mode,
         "logit_impl": args.logit_impl,
+        "plan": plan,
     }
 
     # Model class and mode configuration mapping

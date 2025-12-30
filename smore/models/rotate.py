@@ -83,6 +83,7 @@ class RotateReasoning(KGReasoning):
         query_name_dict=None,
         rotate_mode=None,
         logit_impl="native",
+        plan=None,
     ):
         super(RotateReasoning, self).__init__(
             nentity=nentity,
@@ -97,6 +98,7 @@ class RotateReasoning(KGReasoning):
             use_cuda=use_cuda,
             query_name_dict=query_name_dict,
             logit_impl=logit_impl,
+            plan=plan,
         )
         self.geo = "rotate"
         self.entity_dim = hidden_dim * 2

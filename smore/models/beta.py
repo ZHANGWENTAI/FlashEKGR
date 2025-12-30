@@ -276,6 +276,7 @@ class BetaReasoning(KGReasoning):
         query_name_dict=None,
         beta_mode=None,
         logit_impl="native",
+        plan=None,
     ):
         super(BetaReasoning, self).__init__(
             nentity=nentity,
@@ -290,6 +291,7 @@ class BetaReasoning(KGReasoning):
             use_cuda=use_cuda,
             query_name_dict=query_name_dict,
             logit_impl=logit_impl,
+            plan=plan,
         )
         self.geo = "beta"
 

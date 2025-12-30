@@ -77,6 +77,7 @@ class BoxReasoning(KGReasoning):
         query_name_dict=None,
         box_mode=None,
         logit_impl="native",
+        plan=None,
     ):
         super(BoxReasoning, self).__init__(
             nentity=nentity,
@@ -91,6 +92,7 @@ class BoxReasoning(KGReasoning):
             use_cuda=use_cuda,
             query_name_dict=query_name_dict,
             logit_impl=logit_impl,
+            plan=plan,
         )
         self.geo = "box"
         self.entity_embedding = SparseEmbedding(nentity, self.entity_dim)

@@ -19,24 +19,24 @@ query_name_dict = {
     ("e", ("r", "r")): "2p",
     ("e", ("r", "r", "r")): "3p",
     ("e", ("r", "r", "r", "r")): "4p",
-    (("e", ("r",)), ("e", ("r",))): "2i",
-    (("e", ("r",)), ("e", ("r",)), ("e", ("r",))): "3i",
-    (("e", ("r",)), ("e", ("r",)), ("e", ("r",)), ("e", ("r",))): "4i",
-    ((("e", ("r",)), ("e", ("r",))), ("r",)): "ip",
-    ((("e", ("r",)), ("e", ("r",)), ("e", ("r",))), ("r",)): "3ip",
-    (("e", ("r", "r")), ("e", ("r",))): "pi",
-    (("e", ("r",)), ("e", ("r", "n"))): "2in",
-    (("e", ("r",)), ("e", ("r",)), ("e", ("r", "n"))): "3in",
-    ((("e", ("r",)), ("e", ("r", "n"))), ("r",)): "inp",
-    (("e", ("r", "r")), ("e", ("r", "n"))): "pin",
-    (("e", ("r", "r", "n")), ("e", ("r",))): "pni",
+    (("e", ("r",)), ("e", ("r",)), ("i",)): "2i",
+    (("e", ("r",)), ("e", ("r",)), ("e", ("r",)), ("i",)): "3i",
+    (("e", ("r",)), ("e", ("r",)), ("e", ("r",)), ("e", ("r",)), ("i",)): "4i",
+    ((("e", ("r",)), ("e", ("r",))), ("i", "r")): "ip",
+    ((("e", ("r",)), ("e", ("r",)), ("e", ("r",))), ("i", "r",)): "3ip",
+    (("e", ("r", "r")), ("e", ("r",)), ("i",)): "pi",
+    (("e", ("r",)), ("e", ("r", "n")), ("i",)): "2in",
+    (("e", ("r",)), ("e", ("r",)), ("e", ("r", "n")), ("i",)): "3in",
+    ((("e", ("r",)), ("e", ("r", "n"))), ("i", "r")): "inp",
+    (("e", ("r", "r")), ("e", ("r", "n")), ("i",)): "pin",
+    (("e", ("r", "r", "n")), ("e", ("r",)), ("i",)): "pni",
     (("e", ("r",)), ("e", ("r",)), ("u",)): "2u-DNF",
-    ((("e", ("r",)), ("e", ("r",)), ("u",)), ("r",)): "up-DNF",
-    ((("e", ("r", "n")), ("e", ("r", "n"))), ("n",)): "2u-DM",
-    ((("e", ("r", "n")), ("e", ("r", "n"))), ("n", "r")): "up-DM",
-    ("<", ("e", ("r",))): "-1p",
-    ("<", ("e", ("r", "r"))): "-2p",
-    ("<", ("e", ("r", "r", "r"))): "-3p",
+    ((("e", ("r",)), ("e", ("r",))), ("u", "r")): "up-DNF",
+    ((("e", ("r", "n")), ("e", ("r", "n"))), ("i", "n",)): "2u-DM",
+    ((("e", ("r", "n")), ("e", ("r", "n"))), ("i", "n", "r")): "up-DM",
+    # ("<", ("e", ("r",))): "-1p",
+    # ("<", ("e", ("r", "r"))): "-2p",
+    # ("<", ("e", ("r", "r", "r"))): "-3p",
 }
 
 name_query_dict = {value: key for key, value in query_name_dict.items()}
@@ -223,4 +223,5 @@ def parse_args(args=None):  # pylint: disable=unused-argument
     parser.add_argument("--eval_batch_size", type=int, default=1, help="batch size for eval")
     parser.add_argument("--eval_link_pred", action="store_true", default=False)
     parser.add_argument("--feature_folder", default=None, type=str, help="folder to entity and relation features")
+    parser.add_argument("--plan_mode", default="lop", type=str, choices=["lop", "native"], help="plan mode")
     return parser
