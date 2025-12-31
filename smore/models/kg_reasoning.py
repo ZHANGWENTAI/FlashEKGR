@@ -98,6 +98,14 @@ class KGReasoning(nn.Module):
             raise ValueError("unknown logit impl %s" % logit_impl)
         self.plan = plan
 
+        # Entity embedding double buffer for pipeline
+        self.entity_embed_buffer_read = None
+        self.entity_embed_buffer_write = None
+        self.entity_embed_buffer_ready = [False, False]
+        self.entity_embed_load_stream = None
+        self.entity_embed_read_event = None
+        self.entity_embed_write_event = None
+
     def cal_logit(self, entity_embedding, entity_feat, query_embedding):
         return self._cal_logit(entity_embedding, entity_feat, query_embedding)
 
@@ -158,6 +166,10 @@ class KGReasoning(nn.Module):
             self.entity_embedding = self.entity_embedding.cuda(device)
         if "r" not in self.sparse_embeddings or self.sparse_device == "gpu":
             self.relation_embedding = self.relation_embedding.cuda(device)
+        # Initialize CUDA stream for entity embedding loading
+        if self.use_cuda and self.entity_embed_load_stream is None:
+            device_id = int(device.split(":")[1]) if ":" in str(device) else 0
+            self.entity_embed_load_stream = torch.cuda.Stream(device_id)
 
     def share_memory(self):
         logging.info("Sharing memory")
@@ -285,25 +297,56 @@ class KGReasoning(nn.Module):
 
         return embedding, idx
     
+    def preload_next_batch_embeddings(self, next_query_name: str, next_queries: torch.Tensor):
+        """
+        Preload next batch's entity embeddings to write buffer.
+
+        Args:
+            next_query_name: Next batch's query name
+            next_queries: Next batch's query matrix [batch_size, query_length]
+        """
+        plan = self.plan[next_query_name]
+        first_node = plan[0]
+        assert first_node.op_type == OpType.LOAD_EMBED
+
+        entity_ids = next_queries[:, first_node.entity_idx].view(-1)
+
+        with torch.cuda.stream(self.entity_embed_load_stream):
+            embedding = self.retrieve_embedding(entity_ids)
+            self.entity_embed_buffer_write = embedding
+            self.entity_embed_write_event = torch.cuda.Event()
+            self.entity_embed_write_event.record(self.entity_embed_load_stream)
+            self.entity_embed_buffer_ready[1] = True
+
     def lop_embed_query(self, queries: torch.Tensor, query_name: str) -> Union[torch.Tensor, List[torch.Tensor]]:
         """
-        Execute the query plan.
+        Execute the query plan, reading from read buffer.
 
         Args:
             queries: Query matrix [batch_size, query_length]
-            device: Device to execute on
+            query_name: Query name
 
         Returns:
             Embedding result (same format as embed_query's embedding output)
         """
         cached_embeddings: List = []
 
-        for node in self.plan[query_name]:
-            if node.op_type == OpType.LOAD_EMBED:
-                embedding = self.retrieve_embedding(queries[:, node.entity_idx])
-                cached_embeddings.append(embedding)
+        if self.entity_embed_buffer_ready[0] and self.entity_embed_read_event is not None:
+            self.entity_embed_read_event.wait()
 
-            elif node.op_type == OpType.RELATION_PROJ:
+        plan = self.plan[query_name]
+        first_node = plan[0]
+        assert first_node.op_type == OpType.LOAD_EMBED
+
+        if self.entity_embed_buffer_read is not None:
+            cached_embeddings.append(self.entity_embed_buffer_read)
+        else:
+            entity_ids = queries[:, first_node.entity_idx].view(-1)
+            embedding = self.retrieve_embedding(entity_ids)
+            cached_embeddings.append(embedding)
+
+        for node in plan[1:]:
+            if node.op_type == OpType.RELATION_PROJ:
                 embedding = cached_embeddings[node.cache_idx]
                 new_embedding = self.relation_projection(embedding, queries[:, node.relation_indices])
                 cached_embeddings[node.cache_idx] = new_embedding
@@ -328,7 +371,6 @@ class KGReasoning(nn.Module):
             else:
                 raise ValueError(f"Unknown operation type: {node.op_type}")
 
-        # Return the last result (should be the final embedding)
         assert len(cached_embeddings) == 1, "Expected 1 cached embedding, got %d" % len(cached_embeddings)
         return cached_embeddings[0]
     

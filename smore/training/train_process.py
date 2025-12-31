@@ -31,6 +31,63 @@ from smore.common.embedding.embed_optimizer import get_optim_class
 eps = 1e-8
 
 
+def _swap_entity_embed_buffer(model):
+    """Swap entity embedding double buffer: write -> read."""
+    model.entity_embed_buffer_read = model.entity_embed_buffer_write
+    model.entity_embed_buffer_ready[0] = model.entity_embed_buffer_ready[1]
+    model.entity_embed_read_event = model.entity_embed_write_event
+    model.entity_embed_buffer_write = None
+    model.entity_embed_buffer_ready[1] = False
+
+
+def _swap_optim_state_buffer(embed_opt):
+    """Swap optimizer state double buffer: write -> read."""
+    embed_opt.optim_state_buffer_read = embed_opt.optim_state_buffer_write
+    embed_opt.optim_state_buffer_ready[0] = embed_opt.optim_state_buffer_ready[1]
+    embed_opt.optim_state_read_event = embed_opt.optim_state_write_event
+    embed_opt.optim_state_buffer_write = {}
+    embed_opt.optim_state_buffer_ready[1] = False
+
+
+def _preload_next_batch_embeddings(model, next_query_name, next_batch_queries):
+    """Preload next batch's entity embeddings."""
+    model.preload_next_batch_embeddings(next_query_name, next_batch_queries)
+
+
+def _preload_next_batch_optim_states(model, embedding_optimizers, next_query_name, next_batch_queries):
+    """Preload next batch's optimizer states."""
+    plan = model.plan[next_query_name]
+    first_node = plan[0]
+    entity_ids = next_batch_queries[:, first_node.entity_idx].view(-1)
+    for name, embed_opt in embedding_optimizers.items():
+        if embed_opt.optimizer_device == "cpu" and embed_opt.optim_state_load_stream is not None:
+            _swap_optim_state_buffer(embed_opt)
+            embed_opt.preload_next_batch_optim_state(entity_ids)
+
+
+def _swap_and_preload_next_batch(model, embedding_optimizers, next_batch, current_query_name):
+    """
+    Swap double buffers and preload next batch's embeddings and optimizer states.
+
+    Args:
+        model: KGReasoning model instance
+        embedding_optimizers: Dictionary of embedding optimizers
+        next_batch: Next batch data tuple
+        current_query_name: Current batch's query name
+    """
+    if next_batch is None or current_query_name is None or model.entity_embed_load_stream is None:
+        return
+
+    _swap_entity_embed_buffer(model)
+
+    _, _, _, _, next_batch_queries, next_query_structures = next_batch
+    next_query_structure = next_query_structures[0]
+    next_query_name = model.query_name_dict.get(next_query_structure, None)
+    if next_query_name is not None:
+        _preload_next_batch_embeddings(model, next_query_name, next_batch_queries)
+        _preload_next_batch_optim_states(model, embedding_optimizers, next_query_name, next_batch_queries)
+
+
 def save_loss(loss, step, filename="/home/zhangwentai/smore/betae_loss.txt"):
     if step % 100 == 0:
         with open(filename, "a") as f:
@@ -169,7 +226,7 @@ def test_step_mp(model, args, train_sampler, test_dataloader, result_buffer, tra
     result_buffer.put((logs, train_step))
 
 
-def train_step_mp(model, dense_optimizers, embedding_optimizers, train_iterator, args, step, lr, device, world_size):
+def train_step_mp(model, dense_optimizers, embedding_optimizers, train_iterator, args, step, lr, device, world_size, next_batch=None):
     model.train()
     for optimizer in dense_optimizers:
         optimizer.zero_grad()
@@ -186,9 +243,15 @@ def train_step_mp(model, dense_optimizers, embedding_optimizers, train_iterator,
         if is_negative_mat is not None:
             is_negative_mat = is_negative_mat.cuda(device)
 
+    query_structure = query_structures[0]
+    query_name = query_name_dict.get(query_structure, None)
+
+    if step > 0 and model.entity_embed_buffer_ready[0] and model.entity_embed_read_event is not None:
+        model.entity_embed_read_event.wait()
+
     t2 = time.time()
     positive_logit, negative_logit, reg_loss = model(
-        positive_sample, negative_sample, query_structures[0], batch_queries, device=device, reg_coeff=args.reg_coeff
+        positive_sample, negative_sample, query_structure, batch_queries, device=device, reg_coeff=args.reg_coeff
     )
     t3 = time.time()
 
@@ -223,6 +286,9 @@ def train_step_mp(model, dense_optimizers, embedding_optimizers, train_iterator,
         dist.all_reduce(param.grad.data, op=dist.ReduceOp.SUM)
     for optimizer in dense_optimizers:
         optimizer.step()
+
+    # Swap double buffer and preload next batch
+    _swap_and_preload_next_batch(model, embedding_optimizers, next_batch, query_name)
 
     t5 = time.time()
     model.t_read += t2 - t1
@@ -380,6 +446,7 @@ def train_func(args, kg_mem, opt_stats, model, eval_dict, training_tasks, ro_fea
             train_sampler.set_seed(1)
             train_iterator = train_sampler.batch_generator(args.batch_size)
             print("sampler switched to sqrt")
+        next_batch = next(train_iterator, None)
         for step in pbar:
             log = train_step_mp(
                 model,
@@ -391,7 +458,9 @@ def train_func(args, kg_mem, opt_stats, model, eval_dict, training_tasks, ro_fea
                 current_learning_rate,
                 device=device,
                 world_size=world_size,
+                next_batch=next_batch,
             )
+            next_batch = next(train_iterator, None)
             log_msg = log["msg"]
             pbar.set_description(log_msg)
             del log["msg"]

@@ -146,17 +146,59 @@ class EmbeddingOptimizer(ABC):
             for name, buf in sp_embed.named_buffers(recurse=False):
                 fn_local_rw(name, buf)
 
+        # Optimizer state double buffer for pipeline
+        self.optim_state_buffer_read = {}
+        self.optim_state_buffer_write = {}
+        self.optim_state_buffer_ready = [False, False]
+        self.optim_state_load_stream = None
+        self.optim_state_read_event = None
+        self.optim_state_write_event = None
+        if self.optimizer_device == "cpu" and gpu_id != -1:
+            self.optim_state_load_stream = torch.cuda.Stream(gpu_id)
+
+    def preload_next_batch_optim_state(self, next_entity_ids: torch.Tensor):
+        """
+        Preload next batch's optimizer state to write buffer.
+
+        Args:
+            next_entity_ids: Next batch's entity IDs
+        """
+        if self.optimizer_device != "cpu" or self.optim_state_load_stream is None:
+            return
+
+        with torch.cuda.stream(self.optim_state_load_stream):
+            if isinstance(self, AdamEmbedOptimizer):
+                fo = self.state_sum_fo_rw.read(next_entity_ids, "preload_fo")
+                sq = self.state_sum_sq_rw.read(next_entity_ids, "preload_sq")
+                self.optim_state_buffer_write = {"fo": fo, "sq": sq}
+            elif isinstance(self, AdaGradEmbedOptimizer):
+                sq = self.state_sum_rw.read(next_entity_ids, "preload_sq")
+                self.optim_state_buffer_write = {"sq": sq}
+
+            self.optim_state_write_event = torch.cuda.Event()
+            self.optim_state_write_event.record(self.optim_state_load_stream)
+            self.optim_state_buffer_ready[1] = True
+
     def accumulate_grad(self, indices, grad_submat, fwd_idx):
         # print("indices.device, grad_submat.device", indices.device, grad_submat.device)
         self.grad_list.append((indices, grad_submat))
         self.has_grad_list.append(fwd_idx)
 
     def forward(self, indices, name):
-        # print("self.sparse_embed.training and self.optimizer_device == 'cpu':")
-        # print(self.sparse_embed.training and self.optimizer_device == 'cpu')
-        # print("EmbeddingOptimizer of " + str(name) + " forward")
         if self.sparse_embed.training and self.optimizer_device == "cpu":
-            self.prepare_forward(indices, name)
+            if self.optim_state_buffer_ready[0] and self.optim_state_read_event is not None:
+                self.optim_state_read_event.wait()
+                if isinstance(self, AdamEmbedOptimizer) and "fo" in self.optim_state_buffer_read:
+                    fo = self.optim_state_buffer_read.get("fo")
+                    sq = self.optim_state_buffer_read.get("sq")
+                    self.grad_stats.append((fo, sq))
+                elif isinstance(self, AdaGradEmbedOptimizer) and "sq" in self.optim_state_buffer_read:
+                    sq = self.optim_state_buffer_read.get("sq")
+                    self.grad_stats.append(sq)
+                else:
+                    self.prepare_forward(indices, name)
+            else:
+                self.prepare_forward(indices, name)
         return EmbedLookupFunc.apply(self, self.dummy_tensor, indices, name)
 
     def apply_grad(self, lr):
