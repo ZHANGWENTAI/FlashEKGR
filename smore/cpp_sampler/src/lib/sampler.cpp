@@ -47,6 +47,7 @@ ISampler<Dtype>::ISampler(KG<Dtype>* _kg, py::list _query_prob, bool _share_nega
     sample_buf.clear();
     negsample_buf.clear();
     sample_pos = 0;
+    pipeline_entity_set = nullptr;
     this->am_in = new AliasMethod();
     this->am_out = new AliasMethod();
     if (this->weighted_answer_sampling || this->weighted_negative_sampling)
@@ -77,6 +78,12 @@ template<typename Dtype>
 void ISampler<Dtype>::set_seed(Dtype seed)
 {
     query_rand_engine.seed(seed);
+}
+
+template<typename Dtype>
+void ISampler<Dtype>::set_pipeline_entity_set(PipelineEntitySet<Dtype>* pes)
+{
+    pipeline_entity_set = pes;
 }
 
 template<typename Dtype>
@@ -338,10 +345,30 @@ template<typename Dtype>
 QueryTree<Dtype>* Sampler<Dtype>::instantiate_query(QueryTree<Dtype>* query_template)
 {
     QueryTree<Dtype>* query = query_template->copy_backbone();
+    int retry_count = 0;
+    const int max_retries = 1;  // Maximum one retry
+    
     while (true) {
         Dtype ans = this->sample_entity(this->weighted_answer_sampling, query->is_inverse ? this->am_out : this->am_in);
-        if (sample_actual_query(query, ans, query->is_inverse) && verify_sampled_query(query, ans, query->is_inverse))
-            break;
+        if (sample_actual_query(query, ans, query->is_inverse) && verify_sampled_query(query, ans, query->is_inverse)) {
+            // Extract all entity IDs from the query tree
+            std::vector<Dtype> entity_ids;
+            query->extract_entity_ids(entity_ids);
+            
+            // Check if any entity conflicts with pipeline entities
+            if (this->pipeline_entity_set != nullptr && !entity_ids.empty() &&
+                this->pipeline_entity_set->has_any_entity(entity_ids.data(), entity_ids.size())) {
+                // Conflict found, retry sampling
+                if (retry_count < max_retries) {
+                    retry_count++;
+                    delete query;
+                    query = query_template->copy_backbone();
+                    continue;  // Retry sampling
+                }
+                // If already retried once, accept this sample despite conflict
+            }
+            break;  // Sampling successful, exit loop
+        }
     }
     return query;
 }

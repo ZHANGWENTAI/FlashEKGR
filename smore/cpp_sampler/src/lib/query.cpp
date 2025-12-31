@@ -222,6 +222,18 @@ std::string QueryTree<Dtype>::str_bracket(bool backbone_only) const
     return st;
 }
 
+template<typename Dtype>
+void QueryTree<Dtype>::extract_entity_ids(std::vector<Dtype>& entity_ids)
+{
+    if (node_type == QueryNodeType::entity) {
+        entity_ids.push_back(answer);
+    } else {
+        for (auto& ch : children) {
+            ch.second->extract_entity_ids(entity_ids);
+        }
+    }
+}
+
 template class QueryTree<unsigned>;
 template class QueryTree<uint64_t>;
 

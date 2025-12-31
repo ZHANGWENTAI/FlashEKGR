@@ -167,6 +167,15 @@ class OnlineSampler(object):
             no_search_list,
         )
 
+        # Create PipelineEntitySet for tracking entities in pipeline
+        if kg_dtype == "uint32":
+            self.pipeline_entity_set = libsampler.create_pipeline_entity_set32()
+        else:
+            self.pipeline_entity_set = libsampler.create_pipeline_entity_set64()
+        self.sampler.set_pipeline_entity_set(self.pipeline_entity_set)
+        # Track current pipeline stage (0=sampling, 1=loading, 2=computing)
+        self.current_pipeline_stage = 0
+
     def print_queries(self):
         self.sampler.print_queries()
 
@@ -177,6 +186,79 @@ class OnlineSampler(object):
 
     def set_seed(self, seed):
         self.sampler.set_seed(seed)
+
+    def _extract_entity_ids_from_query_args(self, q_args, q_type):
+        """
+        Extract all entity IDs from query_args based on query structure.
+        
+        Args:
+            q_args: Query arguments tensor [batch_size, num_args]
+        q_type: Query type index
+            
+        Returns:
+            numpy array of entity IDs or None
+        """
+        import numpy as np
+        query_structure = self.query_structures[q_type]
+        
+        # Extract entity IDs based on query structure
+        # For simple path queries like 1p, 2p: first arg is entity
+        if is_all_relation(query_structure):
+            entity_ids = q_args[:, 0].numpy()
+            dtype = np.uint32 if self.kg.dtype == "uint32" else np.uint64
+            return entity_ids.astype(dtype)
+        
+        # Complex query: extract entities from multiple positions
+        num_args_per_query = self.list_qt_nargs[q_type]
+        all_entity_ids = []
+        
+        for i in range(q_args.shape[0]):
+            args = q_args[i, :num_args_per_query].numpy()
+            entity_ids = []
+            idx = 0
+            
+            # Parse query structure to extract entity positions
+            if query_structure[-1][0] == "i":  # intersection
+                num_branches = len(query_structure) - 1
+                for branch_idx in range(num_branches):
+                    branch = query_structure[branch_idx]
+                    if isinstance(branch, tuple) and branch[0] == "e":
+                        entity_ids.append(args[idx])
+                        idx += 1
+                        for ele in branch[-1]:
+                            if ele == "r":
+                                idx += 1
+            elif query_structure[-1][0] == "u":  # union
+                num_branches = len(query_structure) - 1
+                for branch_idx in range(num_branches):
+                    branch = query_structure[branch_idx]
+                    if isinstance(branch, tuple) and branch[0] == "e":
+                        entity_ids.append(args[idx])
+                        idx += 1
+                        for ele in branch[-1]:
+                            if ele == "r":
+                                idx += 1
+            elif len(query_structure) == 3 and isinstance(query_structure[-1], tuple) and len(query_structure[-1]) > 0 and query_structure[-1][0] == "r":  # ip, 3ip, etc.
+                num_branches = len(query_structure) - 1
+                for branch_idx in range(num_branches):
+                    branch = query_structure[branch_idx]
+                    if isinstance(branch, tuple) and branch[0] == "e":
+                        entity_ids.append(args[idx])
+                        idx += 1
+                        for ele in branch[-1]:
+                            if ele == "r":
+                                idx += 1
+                # Tail query entity (if exists)
+                tail_structure = query_structure[-1]
+                if isinstance(tail_structure, tuple) and len(tail_structure) == 2 and tail_structure[0] == "e":
+                    entity_ids.append(args[idx])
+            
+            all_entity_ids.extend(entity_ids)
+        
+        if len(all_entity_ids) > 0:
+            dtype = np.uint32 if self.kg.dtype == "uint32" else np.uint64
+            return np.array(all_entity_ids, dtype=dtype)
+        return None
 
     def batch_generator(self, batch_size):
         self.sampler.prefetch(batch_size, self.nprefetch)
@@ -222,6 +304,12 @@ class OnlineSampler(object):
             q_structs = [self.query_structures[q_type]] * batch_size
             if self.sampler_type == "edge":
                 is_neg_mat = None
+
+            # Extract entity IDs and insert into current pipeline stage
+            entity_ids = self._extract_entity_ids_from_query_args(q_args, q_type)
+            if entity_ids is not None:
+                self.pipeline_entity_set.insert_entities(self.current_pipeline_stage, entity_ids)
+
             yield pos_ans, neg_ans, is_neg_mat if self.share_negative else None, weights, q_args, q_structs
             q_type = next_q_type
             buf_idx = 1 - buf_idx
@@ -258,66 +346,3 @@ def print_qt(qt, g, idx):
             s = "dashed"
         g.edge(root_idx, str(ch_idx), label=l, style=s)
     return idx
-
-
-if __name__ == "__main__":
-
-    db_name = "FB15k"
-    data_folder = os.path.join(os.path.expanduser("~"), "data/knowledge_graphs/%s" % db_name)
-    with open(os.path.join(data_folder, "stats.txt"), "r") as f:
-        num_ent = f.readline().strip().split()[-1]
-        num_rel = f.readline().strip().split()[-1]
-        num_ent, num_rel = int(num_ent), int(num_rel)
-
-    kg = libsampler.KG32(num_ent, num_rel)
-    kg.load(data_folder + "/train_bidir.bin")
-    print("num ent", kg.num_ent)
-    print("num rel", kg.num_rel)
-    print("num edges", kg.num_edges)
-
-    sampler_type = "naive"
-    query_structures = ["1p"]
-
-    negative_sample_size = 256
-    sample_mode = (0, 0, "u", "u", 0, True, False)
-    sampler = OnlineSampler(
-        kg,
-        query_structures,
-        negative_sample_size,
-        sample_mode,
-        [1.0 / len(query_structures)] * len(query_structures),
-        sampler_type=sampler_type,
-        share_negative=True,
-        same_in_batch=True,
-        num_threads=1,
-    )
-    batch_gen = sampler.batch_generator(10)
-    idx = 0
-    for pos_ans, neg_ans, is_neg_mat, weights, q_args, q_structs in tqdm(batch_gen):
-        idx += 1
-        # if idx > 10:
-        #     break
-    # for i, qt in enumerate(sampler.list_qt):
-    #     g = graphviz.Digraph()
-    #     g.node_attr['style']='filled'
-
-    #     print_qt(qt, g, 0)
-    #     g.render('graph-%d' % i)
-    # log_file = open('%s/%s-%d.txt' % (db_name, sampler_type, bd), 'w')
-
-    # samplers = [None] * len(all_query_structures)
-    # for i in range(len(all_query_structures)):
-    #     query_structures = all_query_structures[i:i+1]
-    #     samplers[i] = OnlineSampler(kg, query_structures, negative_sample_size, sample_mode, [1.0 / len(query_structures)] * len(query_structures),
-    #                         sampler_type=sampler_type,
-    #                         num_threads=8)
-    #     sampler = samplers[i]
-    #     batch_gen = sampler.batch_generator(1024)
-    #     t = time.time()
-    #     idx = 0
-    #     for pos_ans, weights, q_args, q_structs, neg_ans in batch_gen:
-    #         idx += 1
-    #         if idx > 10:
-    #             break
-    #     log_file.write('%d %.4f\n' % (i, (time.time() - t) / 10))
-    # log_file.close()

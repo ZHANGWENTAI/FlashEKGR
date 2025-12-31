@@ -72,6 +72,9 @@ public:
 
     void get_children(py::list ch_list);
 
+    // Extract all entity IDs from the query tree
+    void extract_entity_ids(std::vector<Dtype>& entity_ids);
+
 private:
     const Dtype* _ans_ptr_begin;
     const Dtype* _ans_ptr_end;

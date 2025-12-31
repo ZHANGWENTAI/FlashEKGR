@@ -65,7 +65,7 @@ def _preload_next_batch_optim_states(model, embedding_optimizers, next_query_nam
             embed_opt.preload_next_batch_optim_state(entity_ids)
 
 
-def _swap_and_preload_next_batch(model, embedding_optimizers, next_batch, current_query_name):
+def _swap_and_preload_next_batch(model, embedding_optimizers, next_batch, current_query_name, train_sampler=None):
     """
     Swap double buffers and preload next batch's embeddings and optimizer states.
 
@@ -74,9 +74,14 @@ def _swap_and_preload_next_batch(model, embedding_optimizers, next_batch, curren
         embedding_optimizers: Dictionary of embedding optimizers
         next_batch: Next batch data tuple
         current_query_name: Current batch's query name
+        train_sampler: OnlineSampler instance for pipeline entity set management
     """
     if next_batch is None or current_query_name is None or model.entity_embed_load_stream is None:
         return
+
+    # Advance pipeline stage for current batch (loading->computing)
+    if train_sampler is not None and hasattr(train_sampler, 'pipeline_entity_set') and hasattr(train_sampler, 'current_pipeline_stage'):
+        train_sampler.current_pipeline_stage = train_sampler.pipeline_entity_set.advance_stage(train_sampler.current_pipeline_stage)
 
     _swap_entity_embed_buffer(model)
 
@@ -288,8 +293,7 @@ def train_step_mp(model, dense_optimizers, embedding_optimizers, train_iterator,
         optimizer.step()
 
     # Swap double buffer and preload next batch
-    _swap_and_preload_next_batch(model, embedding_optimizers, next_batch, query_name)
-
+    _swap_and_preload_next_batch(model, embedding_optimizers, next_batch, query_name, train_sampler)
     t5 = time.time()
     model.t_read += t2 - t1
     model.t_fwd += t3 - t2
@@ -459,6 +463,7 @@ def train_func(args, kg_mem, opt_stats, model, eval_dict, training_tasks, ro_fea
                 device=device,
                 world_size=world_size,
                 next_batch=next_batch,
+                train_sampler=train_sampler,
             )
             next_batch = next(train_iterator, None)
             log_msg = log["msg"]

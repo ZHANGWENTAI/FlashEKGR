@@ -21,6 +21,7 @@ namespace py = pybind11;
 #include "edge_sampler.h"
 #include "query.h"
 #include "alias_method.h"
+#include "pipeline_entity_set.h"
 
 
 template<typename Dtype>
@@ -33,7 +34,8 @@ void declare_sampler(py::module &mod, std::string typestr_suffix)
         .def("prefetch", &EdgeSampler<Dtype>::prefetch)
         .def("next_batch", &EdgeSampler<Dtype>::next_batch)
         .def("sample_batch_entities", &EdgeSampler<Dtype>::sample_batch_entities)
-        .def("print_queries", &EdgeSampler<Dtype>::print_queries);
+        .def("print_queries", &EdgeSampler<Dtype>::print_queries)
+        .def("set_pipeline_entity_set", &EdgeSampler<Dtype>::set_pipeline_entity_set);
 
     std::string naive_sampler_name = "NaiveSampler" + typestr_suffix;
     py::class_<NaiveSampler<Dtype> >(mod, naive_sampler_name.c_str())
@@ -42,7 +44,8 @@ void declare_sampler(py::module &mod, std::string typestr_suffix)
         .def("prefetch", &NaiveSampler<Dtype>::prefetch)
         .def("next_batch", &NaiveSampler<Dtype>::next_batch)
         .def("sample_batch_entities", &NaiveSampler<Dtype>::sample_batch_entities)
-        .def("print_queries", &NaiveSampler<Dtype>::print_queries);
+        .def("print_queries", &NaiveSampler<Dtype>::print_queries)
+        .def("set_pipeline_entity_set", &NaiveSampler<Dtype>::set_pipeline_entity_set);
 
     std::string no_search_sampler_name = "NoSearchSampler" + typestr_suffix;
     py::class_<NoSearchSampler<Dtype> >(mod, no_search_sampler_name.c_str())
@@ -51,7 +54,8 @@ void declare_sampler(py::module &mod, std::string typestr_suffix)
         .def("prefetch", &NoSearchSampler<Dtype>::prefetch)
         .def("next_batch", &NoSearchSampler<Dtype>::next_batch)
         .def("sample_batch_entities", &NoSearchSampler<Dtype>::sample_batch_entities)
-        .def("print_queries", &NoSearchSampler<Dtype>::print_queries);
+        .def("print_queries", &NoSearchSampler<Dtype>::print_queries)
+        .def("set_pipeline_entity_set", &NoSearchSampler<Dtype>::set_pipeline_entity_set);
 
     std::string rejection_sampler_name = "RejectionSampler" + typestr_suffix;
     py::class_<RejectionSampler<Dtype> >(mod, rejection_sampler_name.c_str())
@@ -60,7 +64,8 @@ void declare_sampler(py::module &mod, std::string typestr_suffix)
         .def("prefetch", &RejectionSampler<Dtype>::prefetch)
         .def("next_batch", &RejectionSampler<Dtype>::next_batch)
         .def("sample_batch_entities", &RejectionSampler<Dtype>::sample_batch_entities)
-        .def("print_queries", &RejectionSampler<Dtype>::print_queries);
+        .def("print_queries", &RejectionSampler<Dtype>::print_queries)
+        .def("set_pipeline_entity_set", &RejectionSampler<Dtype>::set_pipeline_entity_set);
 
     std::string test_sampler_name = "TestSampler" + typestr_suffix;
     py::class_<TestSampler<Dtype> >(mod, test_sampler_name.c_str())
@@ -110,6 +115,28 @@ void declare_qtree(py::module &mod, std::string typestr_suffix)
          });
 }
 
+template<typename Dtype>
+void declare_pipeline_entity_set(py::module &mod, std::string typestr_suffix)
+{
+    std::string pes_name = "PipelineEntitySet" + typestr_suffix;
+    py::class_<PipelineEntitySet<Dtype>>(mod, pes_name.c_str())
+        .def(py::init<>())
+        .def("has_any_entity", [](PipelineEntitySet<Dtype>& self, py::array_t<Dtype, py::array::c_style | py::array::forcecast> entity_ids) {
+            auto buf = entity_ids.request();
+            Dtype* ptr = static_cast<Dtype*>(buf.ptr);
+            return self.has_any_entity(ptr, buf.size);
+        })
+        .def("insert_entities", [](PipelineEntitySet<Dtype>& self, int stage, py::array_t<Dtype, py::array::c_style | py::array::forcecast> entity_ids) {
+            auto buf = entity_ids.request();
+            Dtype* ptr = static_cast<Dtype*>(buf.ptr);
+            self.insert_entities(stage, ptr, buf.size);
+        })
+        .def("clear_stage", &PipelineEntitySet<Dtype>::clear_stage)
+        .def("move_stage", &PipelineEntitySet<Dtype>::move_stage)
+        .def("advance_stage", &PipelineEntitySet<Dtype>::advance_stage)
+        .def("get_stage_size", &PipelineEntitySet<Dtype>::get_stage_size);
+}
+
 
 PYBIND11_MODULE(libsampler, mod) {
 
@@ -121,6 +148,17 @@ PYBIND11_MODULE(libsampler, mod) {
 
     declare_qtree<unsigned>(mod, "32");
     declare_qtree<uint64_t>(mod, "64");
+
+    declare_pipeline_entity_set<unsigned>(mod, "32");
+    declare_pipeline_entity_set<uint64_t>(mod, "64");
+
+    mod.def("create_pipeline_entity_set32", []() {
+        return new PipelineEntitySet<unsigned>();
+    }, py::return_value_policy::reference);
+
+    mod.def("create_pipeline_entity_set64", []() {
+        return new PipelineEntitySet<uint64_t>();
+    }, py::return_value_policy::reference);
 
     py::class_<AliasMethod>(mod, "AliasMethod")
         .def(py::init<>())

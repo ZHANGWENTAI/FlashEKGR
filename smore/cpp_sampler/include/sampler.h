@@ -25,6 +25,7 @@ namespace py = pybind11;
 #include <unordered_set>
 #include "knowledge_graph.h"
 #include "query.h"
+#include "pipeline_entity_set.h"
 
 class ThreadPool;
 class AliasMethod;
@@ -67,6 +68,9 @@ public:
     std::vector<float> query_prob;
 
     Dtype sample_pos;
+    PipelineEntitySet<Dtype>* pipeline_entity_set;
+    
+    void set_pipeline_entity_set(PipelineEntitySet<Dtype>* pes);
 protected:
     int batch_size, num_threads;
     AliasMethod *am_in, *am_out;
