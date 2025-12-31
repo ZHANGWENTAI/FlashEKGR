@@ -32,6 +32,7 @@ from smore.common.torchext.dist_func.beta_dist import (
     naive_beta_fisher_approx,
 )
 import torch.distributions.kl as torch_kl
+from smore.common.cuda_graph import enable_cuda_graph
 
 
 class BetaIntersection(nn.Module):
@@ -358,6 +359,7 @@ class BetaReasoning(KGReasoning):
         self.center_net.share_memory()
         self.projection_net.share_memory()
 
+    @enable_cuda_graph()
     def relation_projection(self, cur_embedding, relation_ids):
         relation_embedding = self.relation_embedding(relation_ids).unsqueeze(1)
         num_lazy_union = cur_embedding[0].shape[1]
@@ -366,6 +368,7 @@ class BetaReasoning(KGReasoning):
         embedding = self.projection_net(embedding, relation_embedding)
         return torch.chunk(embedding, 2, dim=-1)
 
+    @enable_cuda_graph()
     def negation(self, cur_embedding):
         return [1.0 / embedding for embedding in cur_embedding]
 
@@ -379,6 +382,7 @@ class BetaReasoning(KGReasoning):
         alpha_embedding, beta_embedding = torch.chunk(embedding, 2, dim=-1)
         return [alpha_embedding.unsqueeze(1), beta_embedding.unsqueeze(1)]
 
+    @enable_cuda_graph()
     def intersection_between_stacked_embedding(self, stacked_embedding_list):
         alpha_embedding, beta_embedding = torch.chunk(stacked_embedding_list, 2, dim=-1)
         return self.center_net(alpha_embedding, beta_embedding)

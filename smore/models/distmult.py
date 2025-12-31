@@ -23,6 +23,7 @@ import torch.nn.functional as F
 from smore.models.kg_reasoning import KGReasoning
 from smore.common.modules import Identity, Normalizer
 from smore.common.embedding.sparse_embed import SparseEmbedding
+from smore.common.cuda_graph import enable_cuda_graph
 
 
 class DistmultCenterSet(nn.Module):
@@ -125,6 +126,7 @@ class DistmultReasoning(KGReasoning):
         super(DistmultReasoning, self).share_memory()
         self.center_net.share_memory()
 
+    @enable_cuda_graph()
     def relation_projection(self, cur_embedding, relation_ids):
         relation_embedding = self.relation_embedding(relation_ids).unsqueeze(1)
         relation_embedding = self.embed_norm(relation_embedding)
@@ -141,6 +143,7 @@ class DistmultReasoning(KGReasoning):
         embedding = self.embed_norm(self.entity_embedding(entity_ids))
         return [embedding.unsqueeze(1)]  # [num_queries, 1, embedding_dim]
 
+    @enable_cuda_graph()
     def intersection_between_stacked_embedding(self, stacked_embedding_list):
         embedding = self.embed_norm(self.center_net(stacked_embedding_list))  # [32, 6, 16]
         return [embedding]

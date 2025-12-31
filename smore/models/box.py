@@ -24,6 +24,7 @@ from smore.models.kg_reasoning import KGReasoning
 from smore.common.modules import Identity
 from smore.common.embedding.sparse_embed import SparseEmbedding
 from smore.common.torchext.ext_ops import box_dist_in, box_dist_out
+from smore.common.cuda_graph import enable_cuda_graph
 
 
 class BoxOffsetIntersection(nn.Module):
@@ -144,6 +145,7 @@ class BoxReasoning(KGReasoning):
         self.offset_net.share_memory()
         self.offset_embedding.share_memory()
 
+    @enable_cuda_graph()
     def relation_projection(self, cur_embedding, relation_ids):
         relation_embedding = self.relation_embedding(relation_ids).unsqueeze(1)
         offset_embedding = self.offset_embedding(relation_ids).unsqueeze(1)
@@ -159,6 +161,7 @@ class BoxReasoning(KGReasoning):
         offset_embedding = torch.zeros_like(embedding).to(embedding.device)
         return [embedding.unsqueeze(1), offset_embedding.unsqueeze(1)]
 
+    @enable_cuda_graph()
     def intersection_between_stacked_embedding(self, stacked_embedding_list):
         embedding, offset_embedding = torch.chunk(stacked_embedding_list, 2, dim=-1)
         embedding = self.center_net(embedding)  # [32, 6, 16]

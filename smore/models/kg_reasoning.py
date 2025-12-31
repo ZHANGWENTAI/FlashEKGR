@@ -24,6 +24,7 @@ import torch.nn as nn
 from smore.common.embedding.sparse_embed import SparseEmbedding
 from smore.common.embedding.embed_rw import EmbeddingReadOnly
 from smore.common.util import cal_ent_loc_dict
+from smore.common.cuda_graph import enable_cuda_graph
 
 from smore.models.query_parser import OpType
 
@@ -181,6 +182,7 @@ class KGReasoning(nn.Module):
         reg2 = 0.0 if negative_embedding is None else torch.norm(negative_embedding, p=3) ** 3
         return reg1 + reg2 + torch.norm(self.relation_embedding.embedding, p=3) ** 3
 
+    @enable_cuda_graph()
     def merge_embeddings(self, embedding_list, dim, expand_dim=None):
         """
         Merge embeddings in embedding_list along dim.
@@ -205,6 +207,7 @@ class KGReasoning(nn.Module):
     def entity_regularizer(self, embedding):
         return embedding
 
+    @enable_cuda_graph()
     def union(self, embedding_list):
         """
         Take union over the embedding_list.
@@ -216,6 +219,7 @@ class KGReasoning(nn.Module):
         # [tensor(32, 3, 8), tensor(32, 3, 8)]
         return self.merge_embeddings(embedding_list, dim=1)
 
+    @enable_cuda_graph()
     def intersection(self, embedding_list):
         """
         Take intersection over the embedding_list.
@@ -248,6 +252,7 @@ class KGReasoning(nn.Module):
         # print("stacked_embedding_list.shape", stacked_embedding_list.shape)
         return self.intersection_between_stacked_embedding(stacked_embedding_list)
 
+    @enable_cuda_graph()
     def negation(self, embedding):
         raise NotImplementedError
 
