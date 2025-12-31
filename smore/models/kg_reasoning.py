@@ -487,6 +487,7 @@ class KGReasoning(nn.Module):
                 )
             if all_neg_ent_feat is not None:
                 all_neg_ent_feat = all_neg_ent_feat.view(batch_size, negative_size, -1)
+            all_negative_embedding = all_negative_embedding.permute(1, 0, 2)
             negative_logits = self.cal_logit(all_negative_embedding, all_neg_ent_feat, query_embedding)
         else:
             negative_logits = None
