@@ -42,7 +42,7 @@ git submodule update --init
 Navigate to the root folder of the project and perform the following operations:
 
 ```plaintext
-cd flashclqa
+cd flashekgr
 sh setup.sh
 
 ```
