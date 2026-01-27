@@ -23,7 +23,7 @@ from torch.utils.cpp_extension import BuildExtension, CppExtension, CUDAExtensio
 
 BASEPATH = os.path.dirname(os.path.abspath(__file__))
 
-EXTLIB_PATH = 'smore/common/torchext'
+EXTLIB_PATH = 'flashekgr/common/torchext'
 compile_args = [f'-I{os.path.join(BASEPATH, "third_party/ThreadPool")}', '-Wno-deprecated-declarations']
 link_args = []
 
@@ -46,7 +46,7 @@ class CustomDevelop(develop):
 
         # Build custom ops
         folders = [
-            os.path.join(BASEPATH, 'smore/cpp_sampler'),
+            os.path.join(BASEPATH, 'flashekgr/cpp_sampler'),
         ]
         for folder in folders:
             os.chdir(folder)
@@ -57,8 +57,8 @@ class CustomDevelop(develop):
         super().run()
 
 
-setup(name='smore',
-      py_modules=['smore'],
+setup(name='flashekgr',
+      py_modules=['flashekgr'],
       ext_modules=ext_modules,
       install_requires=[
       ],
