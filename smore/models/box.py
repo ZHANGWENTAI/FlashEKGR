@@ -23,7 +23,7 @@ import torch.nn.functional as F
 from smore.models.kg_reasoning import KGReasoning
 from smore.common.modules import Identity
 from smore.common.embedding.sparse_embed import SparseEmbedding
-from smore.common.torchext.ext_ops import box_dist_in, box_dist_out
+from smore.common.torchext.dist_func.box_dist import box_dist_in, box_dist_out
 from smore.common.cuda_graph import enable_cuda_graph
 
 

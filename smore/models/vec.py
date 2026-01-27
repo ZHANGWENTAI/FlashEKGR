@@ -22,7 +22,8 @@ from smore.common.embedding.sparse_embed import SparseEmbedding
 from smore.models.kg_reasoning import KGReasoning
 from smore.models.featured_embedding import get_feat_embed_mod
 from smore.models.box import CenterIntersection
-from smore.common.torchext.ext_ops import l1_dist, l2_dist
+from smore.common.torchext.dist_func.l1_dist import l1_dist
+from smore.common.torchext.dist_func.l2_dist import l2_dist
 from smore.common.cuda_graph import enable_cuda_graph
 
 

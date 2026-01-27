@@ -274,10 +274,9 @@ def forward_step(model, data, targets):
     output = model(data)
     return torch.nn.functional.mse_loss(output, targets)
 
-@enable_cuda_graph
+@enable_cuda_graph()
 def graphed_forward_step(model, data, targets): return forward_step(model, data, targets)
 
-@enable_cuda_graph
 def disabled_graphed_step(model, data, targets): return forward_step(model, data, targets)
 
 class TestCudaGraphMgr(unittest.TestCase):

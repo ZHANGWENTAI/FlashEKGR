@@ -25,7 +25,8 @@ import torch.distributed as dist
 from torch.utils.data import DataLoader
 
 from smore.cpp_sampler.online_sampler import OnlineSampler
-from smore.common.util import name_query_dict, query_name_dict, thread_wrapped_func, log_metrics, eval_tuple
+from smore.common.util import thread_wrapped_func, log_metrics, eval_tuple
+from smore.common.config import name_query_dict, query_name_dict
 from smore.common.embedding.embed_optimizer import get_optim_class
 
 eps = 1e-8
@@ -231,7 +232,7 @@ def test_step_mp(model, args, train_sampler, test_dataloader, result_buffer, tra
     result_buffer.put((logs, train_step))
 
 
-def train_step_mp(model, dense_optimizers, embedding_optimizers, train_iterator, args, step, lr, device, world_size, next_batch=None):
+def train_step_mp(model, dense_optimizers, embedding_optimizers, train_iterator, args, step, lr, device, world_size, train_sampler=None, next_batch=None):
     model.train()
     for optimizer in dense_optimizers:
         optimizer.zero_grad()

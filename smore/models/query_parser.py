@@ -101,11 +101,21 @@ class QueryParser:
             plan, _ = self._parse_path_query(query_structure, 0, 0)
             return plan
 
-        # Check if this is a union query
-        branch_plan, start_idx = self._parse_branch_query(query_structure[:-1], 0)
-        tail_plan = self._parse_tail_query(query_structure[-1], start_idx)
-
-        return branch_plan + tail_plan
+        # Check if the last element is a simple tail (contains only "r", "n", "i", "u")
+        last_elem = query_structure[-1]
+        if isinstance(last_elem, tuple) and all(isinstance(ele, str) and ele in ["r", "n", "i", "u"] for ele in last_elem):
+            # Standard structure: branches + tail
+            branch_plan, start_idx = self._parse_branch_query(query_structure[:-1], 0)
+            tail_plan = self._parse_tail_query(query_structure[-1], start_idx)
+            return branch_plan + tail_plan
+        else:
+            # Nested structure: all elements are branches (e.g., for "2i", "3i" queries)
+            # or the last element is not a simple tail
+            branch_plan, start_idx = self._parse_branch_query(query_structure, 0)
+            # Add intersection node at the end if we have multiple branches
+            if len(query_structure) > 1:
+                branch_plan.append(IntersectionNode())
+            return branch_plan
 
     def _is_all_relation(self, query_structure: Tuple) -> bool:
         """Check if query structure is an all-relation path query."""
@@ -141,9 +151,24 @@ class QueryParser:
         """Parse a branch query."""
         branch_plans = []
         for branch_idx, branch in enumerate(query_structure):
-            assert self._is_all_relation(branch), "Branch must be an all-relation query"
-            branch_plan, start_idx = self._parse_path_query(branch, start_idx, branch_idx)
-            branch_plans.append(branch_plan)
+            if self._is_all_relation(branch):
+                # Simple all-relation path query
+                branch_plan, start_idx = self._parse_path_query(branch, start_idx, branch_idx)
+                branch_plans.append(branch_plan)
+            else:
+                # Nested branch query (e.g., for "ip" queries: (("e", ("r",)), ("e", ("r",))))
+                # Recursively parse the nested structure
+                nested_plan = self.parse(branch)
+                branch_plans.append(nested_plan)
+                # Update start_idx based on the nested plan
+                for node in nested_plan:
+                    if isinstance(node, LoadEmbedNode):
+                        start_idx = max(start_idx, max(node.entity_idx) + 1) if node.entity_idx else start_idx
+                    elif isinstance(node, RelationProjNode):
+                        start_idx = max(start_idx, max(node.relation_indices) + 1) if node.relation_indices else start_idx
+        
+        if not branch_plans:
+            return [], start_idx
         
         branch_plan = self._find_common_prefix(branch_plans)
 

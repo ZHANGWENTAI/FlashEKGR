@@ -24,7 +24,7 @@ from smore.models.kg_reasoning import KGReasoning
 from smore.common.modules import Identity, Normalizer
 from smore.common.embedding.sparse_embed import SparseEmbedding
 from smore.models.featured_embedding import get_feat_embed_mod
-from smore.common.torchext.ext_ops import complex_sim
+from smore.common.torchext.dist_func.complex_dist import complex_sim
 from smore.common.cuda_graph import enable_cuda_graph
 
 

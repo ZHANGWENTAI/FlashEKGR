@@ -35,12 +35,22 @@ GBFACTOR = float(1 << 30)
 def cal_ent_loc(query_structure, idx):
     if query_structure[0] == "<":
         return cal_ent_loc(query_structure[1], idx)
+    
+    # Check if this is an all-relation path query
     all_relation_flag = True
+    if not isinstance(query_structure, tuple) or len(query_structure) != 2:
+        all_relation_flag = False
+    elif query_structure[0] != "e":
+        all_relation_flag = False
+    elif not isinstance(query_structure[-1], tuple):
+        all_relation_flag = False
+    else:
+        for ele in query_structure[-1]:
+            if ele not in ["r", "n"]:
+                all_relation_flag = False
+                break
+    
     ent_locations = []
-    for ele in query_structure[-1]:
-        if ele not in ["r", "n"]:
-            all_relation_flag = False
-            break
     if all_relation_flag:
         if query_structure[0] == "e":
             ent_locations.append(idx)
@@ -50,12 +60,25 @@ def cal_ent_loc(query_structure, idx):
         for i in range(len(query_structure[-1])):
             idx += 1
     else:
-        for i in range(len(query_structure)):
-            if query_structure[i] == "u":
-                assert i == len(query_structure) - 1
-                break
-            tmp_ent_locations, idx = cal_ent_loc(query_structure[i], idx)
-            ent_locations.extend(tmp_ent_locations)
+        # Check if the last element is a simple tail (contains only "r", "n", "i", "u")
+        last_elem = query_structure[-1]
+        if isinstance(last_elem, tuple) and all(isinstance(ele, str) and ele in ["r", "n", "i", "u"] for ele in last_elem):
+            # Standard structure: branches + tail
+            for i in range(len(query_structure) - 1):
+                tmp_ent_locations, idx = cal_ent_loc(query_structure[i], idx)
+                ent_locations.extend(tmp_ent_locations)
+            # Tail doesn't add entity locations, just relation indices
+            for ele in last_elem:
+                if ele in ["r", "n"]:
+                    idx += 1
+        else:
+            # All elements are branches (e.g., for "2i", "3i" queries)
+            for i in range(len(query_structure)):
+                if query_structure[i] == "u":
+                    assert i == len(query_structure) - 1
+                    break
+                tmp_ent_locations, idx = cal_ent_loc(query_structure[i], idx)
+                ent_locations.extend(tmp_ent_locations)
     return ent_locations, idx
 
 

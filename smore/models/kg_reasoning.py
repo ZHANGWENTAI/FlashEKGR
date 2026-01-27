@@ -474,7 +474,7 @@ class KGReasoning(nn.Module):
             all_positive_embedding = self.entity_regularizer(all_positive_embedding)
             positive_embedding = None if all_positive_embedding is None else all_positive_embedding.unsqueeze(1)
             positive_ent_feat = None if all_pos_ent_feat is None else all_pos_ent_feat.unsqueeze(1)
-            # print("positive_embedding: ",positive_embedding.shape)
+            print("positive_embedding: ",positive_embedding.shape)
             positive_logits = self.cal_logit(positive_embedding, positive_ent_feat, query_embedding)
         else:
             positive_logits = None
@@ -487,6 +487,7 @@ class KGReasoning(nn.Module):
                 )
             if all_neg_ent_feat is not None:
                 all_neg_ent_feat = all_neg_ent_feat.view(batch_size, negative_size, -1)
+            print("all_negative_embedding: ",all_negative_embedding.shape)
             all_negative_embedding = all_negative_embedding.permute(1, 0, 2)
             negative_logits = self.cal_logit(all_negative_embedding, all_neg_ent_feat, query_embedding)
         else:

@@ -16,7 +16,7 @@ import os
 import torch
 from smore.cpp_sampler import libsampler
 from smore.cpp_sampler import sampler_clib
-from smore.common.util import name_query_dict
+from smore.common.config import name_query_dict
 
 from tqdm import tqdm
 
@@ -53,16 +53,53 @@ def build_query_tree(query_structure, fn_qt_create):
             prev_node = cur_root
         return cur_root
     else:
-        last_qt = query_structure[-1]
-        node_type = libsampler.intersect
-        if len(last_qt) == 1 and last_qt[0] == "u":
-            node_type = libsampler.union
-            query_structure = query_structure[:-1]
-        sub_root = fn_qt_create(node_type)
-        for c in query_structure:
-            ch_node = build_query_tree(c, fn_qt_create)
-            sub_root.add_child(libsampler.no_op, ch_node)
-        return sub_root
+        # Check if the last element is a simple tail (contains only "r", "n", "i", "u")
+        last_elem = query_structure[-1]
+        if isinstance(last_elem, tuple) and all(isinstance(ele, str) and ele in ["r", "n", "i", "u"] for ele in last_elem):
+            # Standard structure: branches + tail
+            branches = query_structure[:-1]
+            tail = last_elem
+            
+            # Determine node type based on tail
+            node_type = libsampler.intersect
+            if len(tail) == 1 and tail[0] == "u":
+                node_type = libsampler.union
+            
+            # Build tree for branches
+            sub_root = fn_qt_create(node_type)
+            for branch in branches:
+                ch_node = build_query_tree(branch, fn_qt_create)
+                sub_root.add_child(libsampler.no_op, ch_node)
+            
+            # Process tail operations (relations after intersection/union)
+            current_node = sub_root
+            for ele in tail:
+                if ele == "r":
+                    # Add relation projection
+                    new_node = fn_qt_create(libsampler.entity_set)
+                    new_node.add_child(libsampler.relation, current_node)
+                    current_node = new_node
+                elif ele == "n":
+                    # Add negation
+                    new_node = fn_qt_create(libsampler.entity_set)
+                    new_node.add_child(libsampler.negation, current_node)
+                    current_node = new_node
+                # "i" and "u" are already handled above
+            
+            return current_node
+        else:
+            # All elements are branches (e.g., for "2i", "3i" queries)
+            # Check if last element is union
+            last_qt = query_structure[-1]
+            node_type = libsampler.intersect
+            if isinstance(last_qt, tuple) and len(last_qt) == 1 and last_qt[0] == "u":
+                node_type = libsampler.union
+                query_structure = query_structure[:-1]
+            sub_root = fn_qt_create(node_type)
+            for c in query_structure:
+                ch_node = build_query_tree(c, fn_qt_create)
+                sub_root.add_child(libsampler.no_op, ch_node)
+            return sub_root
 
 
 class OnlineSampler(object):

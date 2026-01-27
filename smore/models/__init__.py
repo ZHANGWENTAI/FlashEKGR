@@ -14,7 +14,6 @@
 
 from smore.common.util import eval_tuple
 from smore.common.config import name_query_dict
-from smore.cpp_sampler.online_sampler import query_structures
 from smore.models import model_list
 from smore.models.query_parser import QueryParser
 

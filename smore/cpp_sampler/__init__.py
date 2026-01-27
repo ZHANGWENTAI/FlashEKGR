@@ -12,9 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import libsampler
 import os
 import sys
 
-dir_path = os.path.dirname(os.path.realpath(__file__))
-sys.path.insert(0, os.path.join(dir_path, "build/dll"))
+# Try to import libsampler from build/dll directory
+# First check if it's already in sys.path (e.g., via PYTHONPATH)
+try:
+    import libsampler
+except ImportError:
+    # If not found, add build/dll to sys.path
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    dll_path = os.path.join(dir_path, "build/dll")
+    if dll_path not in sys.path:
+        sys.path.insert(0, dll_path)
+    import libsampler

@@ -15,6 +15,7 @@
 #ifndef PIPELINE_ENTITY_SET_H
 #define PIPELINE_ENTITY_SET_H
 
+#include <cstddef>
 #include <unordered_set>
 #include <vector>
 

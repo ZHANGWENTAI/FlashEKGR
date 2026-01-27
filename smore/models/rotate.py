@@ -22,7 +22,7 @@ import torch.nn.functional as F
 
 from smore.models.kg_reasoning import KGReasoning
 from smore.common.embedding.sparse_embed import SparseEmbedding
-from smore.common.torchext.ext_ops import rotate_dist
+from smore.common.torchext.dist_func.rotate_dist import rotate_dist
 from smore.common.cuda_graph import enable_cuda_graph
 
 
