@@ -8,7 +8,7 @@ Begin by cloning the repository to your local machine.
 
 Navigate to the project directory and install the package dependencies listed in the `requirements.txt` file. This can typically be done using the following command:
 
-```plaintext
+```shell
 pip install -r requirements.txt
 ```
 
@@ -16,14 +16,14 @@ pip install -r requirements.txt
 
 Since the Computer Platform is 11.7, you need to install the specific version of libtorch. Execute the following commands:
 
-```plaintext
+```shell
 wget https://download.pytorch.org/libtorch/cu117/libtorch-shared-with-deps-2.0.1%2Bcu117.zip
 unzip libtorch-shared-with-deps-2.0.1%2Bcu117.zip
 ```
 
 Once the download and extraction are finished, you need to set $LIBTORCH_PATH environment variable with the actual path of your own libtorch installation:
 
-```plaintext
+```v
 export LIBTORCH_PATH=/path/to/your/libtorch
 ```
 
@@ -33,7 +33,7 @@ This step is vital as it allows the project to access and utilize the libtorch l
 
 Navigate to the root folder of the project and perform the following operations:
 
-```plaintext
+```shell
 git submodule update --init
 ```
 
@@ -41,8 +41,6 @@ git submodule update --init
 
 Navigate to the root folder of the project and perform the following operations:
 
-```plaintext
-cd flashekgr
-sh setup.sh
-
+```shell
+pip install -e .
 ```
